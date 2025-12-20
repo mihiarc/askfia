@@ -17,10 +17,23 @@ class Settings(BaseSettings):
     # Redis (optional)
     redis_url: str | None = None
 
-    # Data
+    # Data / Storage
     data_dir: str = "./data"
     downloads_dir: str = "./downloads"
     preload_states: str = ""  # Comma-separated list
+
+    # FIA Storage (tiered caching)
+    fia_local_dir: str = "./data/fia"
+    fia_local_cache_gb: float = 5.0
+    fia_s3_bucket: str | None = None
+    fia_s3_prefix: str = "fia-duckdb"
+    s3_endpoint_url: str | None = None
+    s3_access_key: str | None = None
+    s3_secret_key: str | None = None
+    s3_region: str = "auto"
+
+    # Usage tracking
+    usage_storage_dir: str = "./data/usage"
 
     # Rate limiting
     rate_limit_requests: int = 100  # per minute

@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
-from .api.routes import chat, query, downloads, health
+from .api.routes import chat, query, downloads, health, usage
 
 # Configure logging
 logging.basicConfig(
@@ -23,20 +23,11 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting pyFIA API...")
 
-    # Pre-download common states for faster queries
+    # Pre-download common states for faster queries using tiered storage
     if settings.preload_states_list:
         logger.info(f"Preloading states: {settings.preload_states_list}")
-        try:
-            from pyfia import download
-
-            for state in settings.preload_states_list:
-                try:
-                    download(state, dir=settings.data_dir)
-                    logger.info(f"  ✓ {state} loaded")
-                except Exception as e:
-                    logger.warning(f"  ✗ {state} failed: {e}")
-        except ImportError:
-            logger.warning("pyfia not installed, skipping preload")
+        from .services.storage import storage
+        storage.preload(settings.preload_states_list)
 
     logger.info("pyFIA API ready!")
     yield
@@ -68,6 +59,7 @@ app.include_router(health.router, tags=["Health"])
 app.include_router(chat.router, prefix="/api/v1/chat", tags=["Chat"])
 app.include_router(query.router, prefix="/api/v1/query", tags=["Query"])
 app.include_router(downloads.router, prefix="/api/v1/downloads", tags=["Downloads"])
+app.include_router(usage.router, prefix="/api/v1", tags=["Usage"])
 
 
 @app.get("/")

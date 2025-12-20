@@ -2,6 +2,7 @@
 
 import json
 import logging
+import time
 from typing import AsyncGenerator
 
 from langchain_anthropic import ChatAnthropic
@@ -11,6 +12,7 @@ from pydantic import BaseModel, Field
 
 from ..config import settings
 from .fia_service import fia_service
+from .usage_tracker import usage_tracker
 
 logger = logging.getLogger(__name__)
 
@@ -20,36 +22,159 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 
 
+# FIA code lookups for human-readable output
+# Common forest type codes (FORTYPCD) - subset of most common types
+FOREST_TYPES = {
+    101: "Jack pine",
+    102: "Red pine",
+    103: "Eastern white pine",
+    104: "Eastern white pine / hemlock",
+    105: "Eastern hemlock",
+    121: "Balsam fir",
+    122: "White spruce",
+    123: "Red spruce",
+    124: "Red spruce / balsam fir",
+    125: "Black spruce",
+    126: "Tamarack",
+    127: "Northern white-cedar",
+    141: "Longleaf pine",
+    142: "Slash pine",
+    161: "Loblolly pine",
+    162: "Shortleaf pine",
+    163: "Loblolly pine / hardwood",
+    164: "Shortleaf pine / oak",
+    165: "Virginia pine",
+    166: "Virginia pine / oak",
+    167: "Sand pine",
+    168: "Table Mountain pine",
+    171: "Pitch pine",
+    381: "Scotch pine",
+    383: "Other exotic softwoods",
+    401: "Eastern white pine / N hardwoods",
+    402: "Eastern redcedar / hardwood",
+    403: "Longleaf pine / oak",
+    404: "Shortleaf pine / oak",
+    405: "Virginia pine / southern red oak",
+    406: "Loblolly pine / hardwood",
+    407: "Slash pine / hardwood",
+    409: "Other pine / hardwood",
+    501: "Post oak / blackjack oak",
+    502: "Chestnut oak",
+    503: "White oak / red oak / hickory",
+    504: "White oak",
+    505: "Northern red oak",
+    506: "Yellow-poplar / white oak / N red oak",
+    507: "Scarlet oak",
+    508: "Chestnut oak / black oak / scarlet oak",
+    509: "Southern red oak / yellow pine",
+    510: "Mixed upland hardwoods",
+    511: "Black walnut",
+    512: "Black locust",
+    513: "Southern scrub oak",
+    514: "Yellow-poplar",
+    515: "Red maple / northern hardwoods",
+    516: "Mixed central hardwoods",
+    517: "Elm / ash / locust",
+    519: "Red maple / oak",
+    520: "Pin oak / sweetgum",
+    601: "Swamp chestnut oak / cherrybark oak",
+    602: "Sweetgum / yellow-poplar",
+    605: "Overcup oak / water hickory",
+    606: "Atlantic white-cedar",
+    607: "Baldcypress / water tupelo",
+    608: "Sweetbay / swamp tupelo / red maple",
+    701: "Black ash / American elm / red maple",
+    702: "River birch / sycamore",
+    703: "Cottonwood",
+    704: "Willow",
+    705: "Sycamore / pecan / American elm",
+    706: "Sugarberry / hackberry / elm / green ash",
+    707: "Silver maple / American elm",
+    708: "Red maple / lowland",
+    709: "Cottonwood / willow",
+    801: "Sugar maple / beech / yellow birch",
+    802: "Black cherry",
+    805: "Hard maple / basswood",
+    809: "Red maple / upland",
+    901: "Aspen",
+    902: "Paper birch",
+    904: "Balsam poplar",
+    962: "Other hardwoods",
+    999: "Nonstocked",
+}
+
+OWNERSHIP_GROUPS = {
+    10: "National Forest",
+    20: "Other federal",
+    30: "State & local government",
+    40: "Private",
+}
+
+STAND_SIZE_CLASSES = {
+    1: "Large diameter (>11\" softwood, >9\" hardwood)",
+    2: "Medium diameter (5-11\" softwood, 5-9\" hardwood)",
+    3: "Small diameter (<5\")",
+    5: "Nonstocked",
+}
+
+
 class ForestAreaInput(BaseModel):
     """Input for forest area query."""
 
     states: list[str] = Field(description="Two-letter state codes (e.g., ['NC', 'GA'])")
     land_type: str = Field(default="forest", description="forest, timber, or reserved")
-    grp_by: str | None = Field(default=None, description="Group by column (e.g., OWNGRPCD)")
+    grp_by: str | None = Field(
+        default=None,
+        description=(
+            "Column to group results by. Common options: "
+            "FORTYPCD (forest type - loblolly pine, oak-hickory, etc.), "
+            "OWNGRPCD (ownership - public, private), "
+            "STDSZCD (stand size class - large/medium/small diameter)"
+        )
+    )
 
 
 @tool(args_schema=ForestAreaInput)
 async def query_forest_area(states: list[str], land_type: str = "forest", grp_by: str | None = None) -> str:
     """
     Query forest land area from FIA database.
-    
+
     Use for questions about:
     - How much forest land is in a state
-    - Forest area by ownership type
+    - Forest area by ownership type (use grp_by='OWNGRPCD')
+    - Forest area by forest type (use grp_by='FORTYPCD')
+    - Forest area by stand size (use grp_by='STDSZCD')
     - Timberland vs reserved forest area
     """
     result = await fia_service.query_area(states, land_type, grp_by)
-    
+
     response = f"**Forest Area ({land_type})**\n"
     response += f"States: {', '.join(states)}\n"
     response += f"Total: {result['total_area_acres']:,.0f} acres\n"
     response += f"SE: {result['se_percent']:.1f}%\n"
-    
-    if result.get("breakdown"):
-        response += "\nBreakdown:\n"
-        for row in result["breakdown"][:10]:
-            response += f"- {row.get(grp_by, 'Unknown')}: {row['ESTIMATE']:,.0f} acres\n"
-    
+
+    if result.get("breakdown") and grp_by:
+        response += f"\nBreakdown by {grp_by}:\n"
+
+        # Sort by estimate descending
+        sorted_rows = sorted(result["breakdown"], key=lambda x: x.get('AREA', x.get('ESTIMATE', 0)), reverse=True)
+
+        for row in sorted_rows[:15]:
+            code = row.get(grp_by)
+            estimate = row.get('AREA', row.get('ESTIMATE', 0))
+
+            # Look up human-readable names
+            if grp_by == "FORTYPCD" and code in FOREST_TYPES:
+                label = FOREST_TYPES[code]
+            elif grp_by == "OWNGRPCD" and code in OWNERSHIP_GROUPS:
+                label = OWNERSHIP_GROUPS[code]
+            elif grp_by == "STDSZCD" and code in STAND_SIZE_CLASSES:
+                label = STAND_SIZE_CLASSES[code]
+            else:
+                label = f"Code {code}"
+
+            response += f"- {label}: {estimate:,.0f} acres\n"
+
     return response
 
 
@@ -220,11 +345,22 @@ class FIAAgent:
         )
         self.llm_with_tools = self.llm.bind_tools(TOOLS)
 
-    async def stream(self, messages: list[dict]) -> AsyncGenerator[dict, None]:
+    async def stream(
+        self,
+        messages: list[dict],
+        user_id: str | None = None,
+        session_id: str | None = None,
+    ) -> AsyncGenerator[dict, None]:
         """Stream a response with tool use."""
+        start_time = time.time()
+        total_input_tokens = 0
+        total_output_tokens = 0
+        tool_calls_count = 0
+        query_type = None
+
         # Convert to LangChain message format
         lc_messages = [SystemMessage(content=SYSTEM_PROMPT)]
-        
+
         for msg in messages:
             if msg["role"] == "user":
                 lc_messages.append(HumanMessage(content=msg["content"]))
@@ -234,9 +370,20 @@ class FIAAgent:
         # Get response (may include tool calls)
         response = await self.llm_with_tools.ainvoke(lc_messages)
 
+        # Track token usage from first response
+        if hasattr(response, "usage_metadata") and response.usage_metadata:
+            total_input_tokens += response.usage_metadata.get("input_tokens", 0)
+            total_output_tokens += response.usage_metadata.get("output_tokens", 0)
+
         # Check for tool calls
         if response.tool_calls:
+            tool_calls_count = len(response.tool_calls)
+
             for tool_call in response.tool_calls:
+                # Track query type from first tool call
+                if query_type is None:
+                    query_type = tool_call["name"]
+
                 yield {
                     "type": "tool_call",
                     "tool_name": tool_call["name"],
@@ -269,19 +416,46 @@ class FIAAgent:
                 if tool_func:
                     result = await tool_func.ainvoke(tool_call["args"])
                     from langchain_core.messages import ToolMessage
-                    lc_messages.append(ToolMessage(
-                        content=result,
-                        tool_call_id=tool_call["id"],
-                    ))
+
+                    lc_messages.append(
+                        ToolMessage(
+                            content=result,
+                            tool_call_id=tool_call["id"],
+                        )
+                    )
 
             final_response = await self.llm.ainvoke(lc_messages)
-            
+
+            # Track token usage from final response
+            if hasattr(final_response, "usage_metadata") and final_response.usage_metadata:
+                total_input_tokens += final_response.usage_metadata.get("input_tokens", 0)
+                total_output_tokens += final_response.usage_metadata.get("output_tokens", 0)
+
             # Stream the text response
             for chunk in final_response.content:
                 yield {"type": "text", "content": chunk}
         else:
             # No tool calls, just stream the text
+            query_type = "direct_response"
             yield {"type": "text", "content": response.content}
+
+        # Calculate latency
+        latency_ms = int((time.time() - start_time) * 1000)
+
+        # Record usage
+        try:
+            await usage_tracker.record(
+                model="claude-sonnet-4-5-20250929",
+                input_tokens=total_input_tokens,
+                output_tokens=total_output_tokens,
+                user_id=user_id,
+                session_id=session_id,
+                tool_calls=tool_calls_count,
+                latency_ms=latency_ms,
+                query_type=query_type,
+            )
+        except Exception as e:
+            logger.warning(f"Failed to record usage: {e}")
 
         yield {"type": "finish"}
 

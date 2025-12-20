@@ -1,12 +1,10 @@
 """Service layer for pyFIA operations."""
 
 import logging
-from functools import lru_cache
-from pathlib import Path
 
 import pandas as pd
 
-from ..config import settings
+from .storage import storage
 
 logger = logging.getLogger(__name__)
 
@@ -63,17 +61,12 @@ def _get_se_percent_column(df: pd.DataFrame, metric: str) -> str | None:
 class FIAService:
     """Service for querying FIA data using pyFIA."""
 
-    def __init__(self, data_dir: str | None = None):
-        self.data_dir = data_dir or settings.data_dir
-        Path(self.data_dir).mkdir(parents=True, exist_ok=True)
+    def __init__(self):
+        self.storage = storage
 
-    @lru_cache(maxsize=100)
     def _get_db_path(self, state: str) -> str:
-        """Download and cache state database path."""
-        from pyfia import download
-
-        logger.info(f"Loading FIA data for {state}...")
-        return download(state, dir=self.data_dir)
+        """Get path to state database using tiered storage."""
+        return self.storage.get_db_path(state)
 
     async def query_area(
         self,
