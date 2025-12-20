@@ -43,16 +43,14 @@ class FIAStorage:
                 from botocore.config import Config
                 from ..config import settings
 
+                # R2 requires us-east-1 as region, regardless of actual location
                 self._s3_client = boto3.client(
                     's3',
                     endpoint_url=settings.s3_endpoint_url,
                     aws_access_key_id=settings.s3_access_key,
                     aws_secret_access_key=settings.s3_secret_key,
-                    region_name=settings.s3_region or 'auto',
-                    config=Config(
-                        signature_version='s3v4',
-                        s3={'addressing_style': 'path'},
-                    ),
+                    region_name='us-east-1',
+                    config=Config(signature_version='s3v4'),
                 )
             except ImportError:
                 logger.warning("boto3 not installed, S3 storage disabled")
