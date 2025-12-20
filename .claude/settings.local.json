@@ -4,7 +4,10 @@
       "Bash(uv run uvicorn:*)",
       "Bash(curl:*)",
       "Bash(npm run dev:*)",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "WebFetch(domain:mihiarc.github.io)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
     ]
   }
 }

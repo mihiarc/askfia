@@ -11,6 +11,55 @@ from ..config import settings
 logger = logging.getLogger(__name__)
 
 
+def _get_estimate_column(df: pd.DataFrame, metric: str) -> str:
+    """Find the estimate column name dynamically."""
+    # Try metric-specific columns first (e.g., AREA, VOLUME, BIOMASS)
+    metric_cols = {
+        "area": ["AREA", "area", "ESTIMATE", "estimate"],
+        "volume": ["VOLUME", "volume", "VOLCFNET", "ESTIMATE", "estimate"],
+        "biomass": ["BIOMASS", "biomass", "DRYBIO_AG", "ESTIMATE", "estimate"],
+        "tpa": ["TPA", "tpa", "ESTIMATE", "estimate"],
+        "mortality": ["MORTALITY", "mortality", "ESTIMATE", "estimate"],
+        "growth": ["GROWTH", "growth", "ESTIMATE", "estimate"],
+    }
+
+    candidates = metric_cols.get(metric, ["ESTIMATE", "estimate"])
+    for col in candidates:
+        if col in df.columns:
+            return col
+
+    # Fallback: first numeric column that's not SE/variance related
+    for col in df.columns:
+        if df[col].dtype in ['float64', 'int64'] and not any(x in col.upper() for x in ['SE', 'VAR', 'CV', 'CI', 'PLOT', 'YEAR']):
+            return col
+
+    raise KeyError(f"Could not find estimate column. Available: {list(df.columns)}")
+
+
+def _get_se_percent_column(df: pd.DataFrame, metric: str) -> str | None:
+    """Find the SE percent column name dynamically."""
+    # Try common patterns
+    candidates = [
+        f"{metric.upper()}_SE_PERCENT",
+        f"{metric.upper()}_SE_PERC",
+        "SE_PERCENT",
+        "se_percent",
+        "CV",
+        "cv",
+    ]
+
+    for col in candidates:
+        if col in df.columns:
+            return col
+
+    # Look for any column containing SE_PERC or cv
+    for col in df.columns:
+        if "SE_PERC" in col.upper() or col.upper() == "CV":
+            return col
+
+    return None
+
+
 class FIAService:
     """Service for querying FIA data using pyFIA."""
 
@@ -42,7 +91,6 @@ class FIAService:
             db_path = self._get_db_path(state)
 
             with FIA(db_path) as db:
-                # Let pyFIA auto-select most recent evaluation
                 result_df = area(db, land_type=land_type, grp_by=grp_by)
                 df = result_df.to_pandas() if hasattr(result_df, "to_pandas") else result_df
                 df["STATE"] = state
@@ -50,9 +98,11 @@ class FIAService:
 
         combined = pd.concat(results, ignore_index=True)
 
-        # pyFIA returns AREA column for area estimates
-        total_area = float(combined["AREA"].sum())
-        se_pct = float(combined["AREA_SE_PERCENT"].mean()) if "AREA_SE_PERCENT" in combined.columns else 0.0
+        est_col = _get_estimate_column(combined, "area")
+        se_col = _get_se_percent_column(combined, "area")
+
+        total_area = float(combined[est_col].sum())
+        se_pct = float(combined[se_col].mean()) if se_col else 0.0
 
         return {
             "states": states,
@@ -79,9 +129,6 @@ class FIAService:
             db_path = self._get_db_path(state)
 
             with FIA(db_path) as db:
-                # Single-state DB already filtered; just clip to most recent eval
-                db.clip_most_recent(eval_type="EXPVOL")
-
                 kwargs = {}
                 if by_species:
                     kwargs["grp_by"] = "SPCD"
@@ -94,13 +141,18 @@ class FIAService:
                 results.append(df)
 
         combined = pd.concat(results, ignore_index=True)
-        total_vol = float(combined["ESTIMATE"].sum())
+
+        est_col = _get_estimate_column(combined, "volume")
+        se_col = _get_se_percent_column(combined, "volume")
+
+        total_vol = float(combined[est_col].sum())
+        se_pct = float(combined[se_col].mean()) if se_col else 0.0
 
         return {
             "states": states,
             "total_volume_cuft": total_vol,
             "total_volume_billion_cuft": total_vol / 1e9,
-            "se_percent": float(combined["SE_PERCENT"].mean()),
+            "se_percent": se_pct,
             "by_species": combined.to_dict("records") if by_species else None,
             "source": "USDA Forest Service FIA (pyFIA validated)",
         }
@@ -121,23 +173,29 @@ class FIAService:
             db_path = self._get_db_path(state)
 
             with FIA(db_path) as db:
-                # Single-state DB already filtered; just clip to most recent eval
-                db.clip_most_recent(eval_type="EXPVOL")
+                kwargs = {"land_type": land_type}
+                if by_species:
+                    kwargs["grp_by"] = "SPCD"
 
-                result_df = biomass(db, land_type=land_type, by_species=by_species)
+                result_df = biomass(db, **kwargs)
                 df = result_df.to_pandas() if hasattr(result_df, "to_pandas") else result_df
                 df["STATE"] = state
                 results.append(df)
 
         combined = pd.concat(results, ignore_index=True)
-        total_biomass = float(combined["ESTIMATE"].sum())
+
+        est_col = _get_estimate_column(combined, "biomass")
+        se_col = _get_se_percent_column(combined, "biomass")
+
+        total_biomass = float(combined[est_col].sum())
+        se_pct = float(combined[se_col].mean()) if se_col else 0.0
 
         return {
             "states": states,
             "land_type": land_type,
             "total_biomass_tons": total_biomass,
             "carbon_mmt": total_biomass * 0.5 / 1e6,  # Standard conversion
-            "se_percent": float(combined["SE_PERCENT"].mean()),
+            "se_percent": se_pct,
             "by_species": combined.to_dict("records") if by_species else None,
             "source": "USDA Forest Service FIA (pyFIA validated)",
         }
@@ -158,10 +216,11 @@ class FIAService:
             db_path = self._get_db_path(state)
 
             with FIA(db_path) as db:
-                # Single-state DB already filtered; just clip to most recent eval
-                db.clip_most_recent(eval_type="EXPVOL")
+                kwargs = {"tree_domain": tree_domain}
+                if by_species:
+                    kwargs["grp_by"] = "SPCD"
 
-                result_df = tpa(db, tree_domain=tree_domain, by_species=by_species)
+                result_df = tpa(db, **kwargs)
                 df = result_df.to_pandas() if hasattr(result_df, "to_pandas") else result_df
                 df["STATE"] = state
                 results.append(df)
@@ -182,21 +241,19 @@ class FIAService:
         land_type: str = "forest",
     ) -> dict:
         """Compare a metric across states."""
-        from pyfia import FIA, area, volume, biomass, tpa, mortality, growth
+        from pyfia import FIA, area, volume, biomass, tpa
 
         metric_funcs = {
-            "area": (area, "EXPALL"),
-            "volume": (volume, "EXPVOL"),
-            "biomass": (biomass, "EXPVOL"),
-            "tpa": (tpa, "EXPVOL"),
-            "mortality": (mortality, "EXPMORT"),
-            "growth": (growth, "EXPGROW"),
+            "area": area,
+            "volume": volume,
+            "biomass": biomass,
+            "tpa": tpa,
         }
 
         if metric not in metric_funcs:
-            raise ValueError(f"Unknown metric: {metric}")
+            raise ValueError(f"Unknown metric: {metric}. Available: {list(metric_funcs.keys())}")
 
-        func, eval_type = metric_funcs[metric]
+        func = metric_funcs[metric]
         results = []
 
         for state in states:
@@ -205,21 +262,21 @@ class FIAService:
                 db_path = self._get_db_path(state)
 
                 with FIA(db_path) as db:
-                    # Single-state DB already filtered; just clip to most recent eval
-                    db.clip_most_recent(eval_type=eval_type)
-
-                    # Some functions accept land_type
+                    # Build kwargs based on metric
+                    kwargs = {}
                     if metric in ("area", "biomass"):
-                        result_df = func(db, land_type=land_type)
-                    else:
-                        result_df = func(db)
+                        kwargs["land_type"] = land_type
 
+                    result_df = func(db, **kwargs)
                     df = result_df.to_pandas() if hasattr(result_df, "to_pandas") else result_df
+
+                    est_col = _get_estimate_column(df, metric)
+                    se_col = _get_se_percent_column(df, metric)
 
                     results.append({
                         "state": state,
-                        "estimate": float(df["ESTIMATE"].sum()),
-                        "se_percent": float(df["SE_PERCENT"].mean()),
+                        "estimate": float(df[est_col].sum()),
+                        "se_percent": float(df[se_col].mean()) if se_col else None,
                         "error": None,
                     })
             except Exception as e:
