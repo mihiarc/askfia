@@ -40,6 +40,7 @@ class FIAStorage:
         if self._s3_client is None and self.s3_bucket:
             try:
                 import boto3
+                from botocore.config import Config
                 from ..config import settings
 
                 self._s3_client = boto3.client(
@@ -47,7 +48,11 @@ class FIAStorage:
                     endpoint_url=settings.s3_endpoint_url,
                     aws_access_key_id=settings.s3_access_key,
                     aws_secret_access_key=settings.s3_secret_key,
-                    region_name=settings.s3_region,
+                    region_name=settings.s3_region or 'auto',
+                    config=Config(
+                        signature_version='s3v4',
+                        s3={'addressing_style': 'path'},
+                    ),
                 )
             except ImportError:
                 logger.warning("boto3 not installed, S3 storage disabled")
