@@ -38,18 +38,13 @@ async def chat_stream(request: ChatRequest):
                 
                 elif chunk["type"] == "tool_call":
                     # Tool invocation
-                    yield f'9:{json.dumps({
-                        "toolCallId": chunk["tool_call_id"],
-                        "toolName": chunk["tool_name"],
-                        "args": chunk["args"],
-                    })}\n'
-                
+                    tool_data = {"toolCallId": chunk["tool_call_id"], "toolName": chunk["tool_name"], "args": chunk["args"]}
+                    yield f'9:{json.dumps(tool_data)}\n'
+
                 elif chunk["type"] == "tool_result":
                     # Tool result
-                    yield f'a:{json.dumps({
-                        "toolCallId": chunk["tool_call_id"],
-                        "result": chunk["result"],
-                    })}\n'
+                    result_data = {"toolCallId": chunk["tool_call_id"], "result": chunk["result"]}
+                    yield f'a:{json.dumps(result_data)}\n'
                 
                 elif chunk["type"] == "finish":
                     # Finish
