@@ -1,11 +1,18 @@
 """Application configuration."""
 
-from pydantic_settings import BaseSettings
-from functools import lru_cache
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
 
     # API Keys
     anthropic_api_key: str
@@ -25,7 +32,7 @@ class Settings(BaseSettings):
     # FIA Storage (tiered caching)
     fia_local_dir: str = "./data/fia"
     fia_local_cache_gb: float = 5.0
-    fia_s3_bucket: str | None = None
+    fia_s3_bucket: str | None = Field(default=None, alias="FIA_S3_BUCKET")
     fia_s3_prefix: str = "fia-duckdb"
     s3_endpoint_url: str | None = None
     s3_access_key: str | None = None
@@ -49,14 +56,9 @@ class Settings(BaseSettings):
             return []
         return [state.strip().upper() for state in self.preload_states.split(",")]
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
 
-
-@lru_cache
 def get_settings() -> Settings:
-    """Get cached settings instance."""
+    """Get settings instance."""
     return Settings()
 
 

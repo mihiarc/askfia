@@ -43,9 +43,9 @@ class FIAStorage:
                 from botocore.config import Config
                 from ..config import settings
 
-                endpoint = settings.s3_endpoint_url
-                access_key = settings.s3_access_key
-                secret_key = settings.s3_secret_key
+                endpoint = (settings.s3_endpoint_url or "").strip()
+                access_key = (settings.s3_access_key or "").strip()
+                secret_key = (settings.s3_secret_key or "").strip()
 
                 logger.info(f"Initializing S3 client - endpoint: {endpoint}, bucket: {self.s3_bucket}")
 
