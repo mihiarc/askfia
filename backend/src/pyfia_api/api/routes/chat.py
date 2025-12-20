@@ -52,7 +52,7 @@ async def chat_stream(request: ChatRequest):
 
         except Exception as e:
             logger.exception("Error in chat stream")
-            yield f'3:{json.dumps({"error": str(e)})}\n'
+            yield f'3:{json.dumps(str(e))}\n'
 
     return StreamingResponse(
         generate(),
