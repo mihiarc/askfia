@@ -43,17 +43,29 @@ class FIAStorage:
                 from botocore.config import Config
                 from ..config import settings
 
+                endpoint = settings.s3_endpoint_url
+                logger.info(f"Initializing S3 client with endpoint: {endpoint}")
+
+                if not endpoint:
+                    logger.error("S3_ENDPOINT_URL is not set!")
+                    self.s3_bucket = None
+                    return None
+
                 # R2 requires us-east-1 as region, regardless of actual location
                 self._s3_client = boto3.client(
                     's3',
-                    endpoint_url=settings.s3_endpoint_url,
+                    endpoint_url=endpoint,
                     aws_access_key_id=settings.s3_access_key,
                     aws_secret_access_key=settings.s3_secret_key,
                     region_name='us-east-1',
                     config=Config(signature_version='s3v4'),
                 )
+                logger.info("S3 client initialized successfully")
             except ImportError:
                 logger.warning("boto3 not installed, S3 storage disabled")
+                self.s3_bucket = None
+            except Exception as e:
+                logger.error(f"Failed to initialize S3 client: {e}")
                 self.s3_bucket = None
         return self._s3_client
 
