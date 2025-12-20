@@ -112,7 +112,10 @@ class FIAStorage:
 
     def _download_from_s3(self, state: str, local_path: Path) -> bool:
         """Try to download from S3. Returns True if successful."""
+        logger.info(f"Attempting S3 download for {state}, bucket={self.s3_bucket}, prefix={self.s3_prefix}")
+
         if not self.s3:
+            logger.error(f"S3 client is None! Cannot download {state}")
             return False
 
         s3_key = f"{self.s3_prefix}/{state}.duckdb"
@@ -120,17 +123,16 @@ class FIAStorage:
             # Ensure parent directory exists
             local_path.parent.mkdir(parents=True, exist_ok=True)
 
-            logger.info(f"Downloading {state} from S3: {s3_key}")
+            logger.info(f"Downloading {state} from S3: s3://{self.s3_bucket}/{s3_key} -> {local_path}")
             self.s3.download_file(self.s3_bucket, s3_key, str(local_path))
+            logger.info(f"Successfully downloaded {state} ({local_path.stat().st_size / 1e6:.1f} MB)")
             return True
         except ClientError as e:
-            if e.response['Error']['Code'] == '404':
-                logger.debug(f"Not found in S3: {s3_key}")
-            else:
-                logger.warning(f"S3 download failed for {state}: {e}")
+            error_code = e.response.get('Error', {}).get('Code', 'Unknown')
+            logger.error(f"S3 ClientError for {state}: {error_code} - {e}")
             return False
         except Exception as e:
-            logger.warning(f"S3 download failed for {state}: {e}")
+            logger.error(f"S3 download failed for {state}: {type(e).__name__}: {e}", exc_info=True)
             return False
 
     def _upload_to_s3(self, state: str, local_path: Path) -> bool:
