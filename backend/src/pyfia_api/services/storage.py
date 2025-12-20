@@ -44,20 +44,25 @@ class FIAStorage:
                 from ..config import settings
 
                 endpoint = settings.s3_endpoint_url
-                logger.info(f"Initializing S3 client with endpoint: {endpoint}")
+                access_key = settings.s3_access_key
+                secret_key = settings.s3_secret_key
 
-                if not endpoint:
-                    logger.error("S3_ENDPOINT_URL is not set!")
+                logger.info(f"Initializing S3 client - endpoint: {endpoint}, bucket: {self.s3_bucket}")
+
+                if not endpoint or not access_key or not secret_key:
+                    logger.error(f"S3 config incomplete: endpoint={bool(endpoint)}, access_key={bool(access_key)}, secret_key={bool(secret_key)}")
                     self.s3_bucket = None
                     return None
 
-                # R2 requires us-east-1 as region, regardless of actual location
-                self._s3_client = boto3.client(
+                # Use session for better compatibility with custom endpoints
+                session = boto3.session.Session(
+                    aws_access_key_id=access_key,
+                    aws_secret_access_key=secret_key,
+                    region_name='us-east-1',
+                )
+                self._s3_client = session.client(
                     's3',
                     endpoint_url=endpoint,
-                    aws_access_key_id=settings.s3_access_key,
-                    aws_secret_access_key=settings.s3_secret_key,
-                    region_name='us-east-1',
                     config=Config(signature_version='s3v4'),
                 )
                 logger.info("S3 client initialized successfully")
@@ -65,7 +70,7 @@ class FIAStorage:
                 logger.warning("boto3 not installed, S3 storage disabled")
                 self.s3_bucket = None
             except Exception as e:
-                logger.error(f"Failed to initialize S3 client: {e}")
+                logger.error(f"Failed to initialize S3 client: {e}", exc_info=True)
                 self.s3_bucket = None
         return self._s3_client
 
