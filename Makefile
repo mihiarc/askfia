@@ -57,7 +57,7 @@ install-backend:
 
 install-frontend:
 	@echo "Installing frontend dependencies..."
-	cd frontend && pnpm install
+	cd frontend && npm install
 
 env:
 	@echo "Setting up environment files..."
@@ -81,7 +81,7 @@ dev-backend:
 
 dev-frontend:
 	@echo "Starting Next.js frontend on http://localhost:3000"
-	cd frontend && pnpm dev
+	cd frontend && npm run dev
 
 # =============================================================================
 # Testing
@@ -96,7 +96,7 @@ test-backend:
 
 test-frontend:
 	@echo "Running frontend tests..."
-	cd frontend && pnpm test 2>/dev/null || echo "No frontend tests configured yet"
+	cd frontend && npm run test 2>/dev/null || echo "No frontend tests configured yet"
 
 # =============================================================================
 # Code Quality
@@ -111,14 +111,14 @@ lint-backend:
 
 lint-frontend:
 	@echo "Linting frontend with eslint..."
-	cd frontend && pnpm lint
+	cd frontend && npm run lint
 
 format:
 	@echo "Formatting backend code..."
 	cd backend && uv run ruff format src/
 	cd backend && uv run ruff check --fix src/
 	@echo "Formatting frontend code..."
-	cd frontend && pnpm lint --fix 2>/dev/null || true
+	cd frontend && npm run lint --fix 2>/dev/null || true
 
 types:
 	@echo "Type checking backend..."
@@ -140,7 +140,7 @@ build-backend:
 
 build-frontend:
 	@echo "Building frontend for production..."
-	cd frontend && pnpm build
+	cd frontend && npm run build
 
 # =============================================================================
 # Docker
