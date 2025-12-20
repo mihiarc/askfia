@@ -42,9 +42,7 @@ class FIAService:
             db_path = self._get_db_path(state)
 
             with FIA(db_path) as db:
-                db.clip_by_state(state)
-                db.clip_most_recent(eval_type="EXPALL")
-
+                # Let pyFIA auto-select most recent evaluation
                 result_df = area(db, land_type=land_type, grp_by=grp_by)
                 df = result_df.to_pandas() if hasattr(result_df, "to_pandas") else result_df
                 df["STATE"] = state
@@ -52,11 +50,15 @@ class FIAService:
 
         combined = pd.concat(results, ignore_index=True)
 
+        # pyFIA returns AREA column for area estimates
+        total_area = float(combined["AREA"].sum())
+        se_pct = float(combined["AREA_SE_PERCENT"].mean()) if "AREA_SE_PERCENT" in combined.columns else 0.0
+
         return {
             "states": states,
             "land_type": land_type,
-            "total_area_acres": float(combined["ESTIMATE"].sum()),
-            "se_percent": float(combined["SE_PERCENT"].mean()),
+            "total_area_acres": total_area,
+            "se_percent": se_pct,
             "breakdown": combined.to_dict("records") if grp_by else None,
             "source": "USDA Forest Service FIA (pyFIA validated)",
         }
@@ -77,7 +79,7 @@ class FIAService:
             db_path = self._get_db_path(state)
 
             with FIA(db_path) as db:
-                db.clip_by_state(state)
+                # Single-state DB already filtered; just clip to most recent eval
                 db.clip_most_recent(eval_type="EXPVOL")
 
                 kwargs = {}
@@ -119,7 +121,7 @@ class FIAService:
             db_path = self._get_db_path(state)
 
             with FIA(db_path) as db:
-                db.clip_by_state(state)
+                # Single-state DB already filtered; just clip to most recent eval
                 db.clip_most_recent(eval_type="EXPVOL")
 
                 result_df = biomass(db, land_type=land_type, by_species=by_species)
@@ -156,7 +158,7 @@ class FIAService:
             db_path = self._get_db_path(state)
 
             with FIA(db_path) as db:
-                db.clip_by_state(state)
+                # Single-state DB already filtered; just clip to most recent eval
                 db.clip_most_recent(eval_type="EXPVOL")
 
                 result_df = tpa(db, tree_domain=tree_domain, by_species=by_species)
@@ -203,7 +205,7 @@ class FIAService:
                 db_path = self._get_db_path(state)
 
                 with FIA(db_path) as db:
-                    db.clip_by_state(state)
+                    # Single-state DB already filtered; just clip to most recent eval
                     db.clip_most_recent(eval_type=eval_type)
 
                     # Some functions accept land_type
