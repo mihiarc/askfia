@@ -541,7 +541,7 @@ class MotherDuckFIA:
         The optimized pyFIA keeps operations as LazyFrames to reduce memory
         usage on cloud backends like MotherDuck.
         """
-        from pyfia.estimation.area import area
+        from pyfia.estimation.estimators.area import area
         return area(self, **kwargs)
 
     def _area_server_side(
