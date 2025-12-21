@@ -2,6 +2,7 @@ services:
   - type: web
     name: pyfia-api
     runtime: python
+    plan: standard  # 2GB RAM - needed for pyFIA estimation
     region: oregon
     rootDir: backend
     buildCommand: pip install -r requirements.txt && pip install -e .
