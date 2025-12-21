@@ -1330,7 +1330,7 @@ wheels = [
 [[package]]
 name = "pyfia"
 version = "1.0.0b1"
-source = { git = "https://github.com/mihiarc/pyfia.git?rev=main#7f9643294f9d53c933fd86d8e2a0284e22f46f93" }
+source = { git = "https://github.com/mihiarc/pyfia.git?rev=main#90947ffa899edce29c58fc2f64f7fce48b296486" }
 dependencies = [
     { name = "connectorx" },
     { name = "duckdb" },
