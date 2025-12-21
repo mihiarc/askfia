@@ -651,10 +651,11 @@ class MotherDuckFIA:
             return result
         except Exception as e:
             logger.error(f"Server-side area estimation failed: {e}")
-            # Fall back to pyFIA implementation if server-side fails
-            logger.info("Falling back to pyFIA implementation")
-            from pyfia.estimation.estimators.area import area
-            return area(self, land_type=land_type, grp_by=grp_by)
+            # Re-raise instead of falling back to pyFIA which would OOM
+            raise RuntimeError(
+                f"Server-side area estimation failed: {e}. "
+                "Cannot fall back to pyFIA due to memory constraints."
+            ) from e
 
     def growth(self, **kwargs) -> pl.DataFrame:
         """Estimate annual growth."""
