@@ -21,6 +21,8 @@ services:
         sync: false
       - key: S3_REGION
         value: auto
+      - key: MOTHERDUCK_TOKEN
+        sync: false
       - key: CORS_ORIGINS
         sync: false
       - key: LOG_LEVEL

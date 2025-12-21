@@ -1,9 +1,12 @@
 """Service layer for pyFIA operations."""
 
 import logging
+from contextlib import contextmanager
+from typing import Generator
 
 import pandas as pd
 
+from ..config import settings
 from .storage import storage
 
 logger = logging.getLogger(__name__)
@@ -63,10 +66,35 @@ class FIAService:
 
     def __init__(self):
         self.storage = storage
+        self._motherduck_token = settings.motherduck_token
 
     def _get_db_path(self, state: str) -> str:
         """Get path to state database using tiered storage."""
         return self.storage.get_db_path(state)
+
+    @contextmanager
+    def _get_fia_connection(self, state: str) -> Generator:
+        """Get FIA connection, preferring MotherDuck if configured."""
+        state = state.upper()
+
+        # Use MotherDuck if token is configured
+        if self._motherduck_token:
+            from .motherduck_fia import MotherDuckFIA
+
+            logger.info(f"Using MotherDuck for {state}")
+            db = MotherDuckFIA(state=state, motherduck_token=self._motherduck_token)
+            try:
+                yield db
+            finally:
+                db._backend.disconnect()
+        else:
+            # Fall back to local storage
+            from pyfia import FIA
+
+            logger.info(f"Using local storage for {state}")
+            db_path = self._get_db_path(state)
+            with FIA(db_path) as db:
+                yield db
 
     async def query_area(
         self,
@@ -75,15 +103,14 @@ class FIAService:
         grp_by: str | None = None,
     ) -> dict:
         """Query forest area across states."""
-        from pyfia import FIA, area
+        from pyfia import area
 
         results = []
 
         for state in states:
             state = state.upper()
-            db_path = self._get_db_path(state)
 
-            with FIA(db_path) as db:
+            with self._get_fia_connection(state) as db:
                 result_df = area(db, land_type=land_type, grp_by=grp_by)
                 df = result_df.to_pandas() if hasattr(result_df, "to_pandas") else result_df
                 df["STATE"] = state
@@ -113,15 +140,14 @@ class FIAService:
         tree_domain: str | None = None,
     ) -> dict:
         """Query timber volume across states."""
-        from pyfia import FIA, volume
+        from pyfia import volume
 
         results = []
 
         for state in states:
             state = state.upper()
-            db_path = self._get_db_path(state)
 
-            with FIA(db_path) as db:
+            with self._get_fia_connection(state) as db:
                 kwargs = {}
                 if by_species:
                     kwargs["grp_by"] = "SPCD"
@@ -157,15 +183,14 @@ class FIAService:
         by_species: bool = False,
     ) -> dict:
         """Query biomass and carbon stocks."""
-        from pyfia import FIA, biomass
+        from pyfia import biomass
 
         results = []
 
         for state in states:
             state = state.upper()
-            db_path = self._get_db_path(state)
 
-            with FIA(db_path) as db:
+            with self._get_fia_connection(state) as db:
                 kwargs = {"land_type": land_type}
                 if by_species:
                     kwargs["grp_by"] = "SPCD"
@@ -200,15 +225,14 @@ class FIAService:
         by_species: bool = False,
     ) -> dict:
         """Query trees per acre."""
-        from pyfia import FIA, tpa
+        from pyfia import tpa
 
         results = []
 
         for state in states:
             state = state.upper()
-            db_path = self._get_db_path(state)
 
-            with FIA(db_path) as db:
+            with self._get_fia_connection(state) as db:
                 kwargs = {"tree_domain": tree_domain}
                 if by_species:
                     kwargs["grp_by"] = "SPCD"
@@ -234,7 +258,7 @@ class FIAService:
         land_type: str = "forest",
     ) -> dict:
         """Compare a metric across states."""
-        from pyfia import FIA, area, volume, biomass, tpa
+        from pyfia import area, volume, biomass, tpa
 
         metric_funcs = {
             "area": area,
@@ -252,9 +276,7 @@ class FIAService:
         for state in states:
             state = state.upper()
             try:
-                db_path = self._get_db_path(state)
-
-                with FIA(db_path) as db:
+                with self._get_fia_connection(state) as db:
                     # Build kwargs based on metric
                     kwargs = {}
                     if metric in ("area", "biomass"):

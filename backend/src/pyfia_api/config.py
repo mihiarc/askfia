@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     downloads_dir: str = "./downloads"
     preload_states: str = ""  # Comma-separated list
 
-    # FIA Storage (tiered caching)
+    # FIA Storage (tiered caching - legacy, kept for migration)
     fia_local_dir: str = "./data/fia"
     fia_local_cache_gb: float = 5.0
     fia_s3_bucket: str | None = Field(default=None, alias="FIA_S3_BUCKET")
@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     s3_access_key: str | None = None
     s3_secret_key: str | None = None
     s3_region: str = "auto"
+
+    # MotherDuck (serverless DuckDB - primary storage)
+    motherduck_token: str | None = Field(default=None, alias="MOTHERDUCK_TOKEN")
 
     # Usage tracking
     usage_storage_dir: str = "./data/usage"

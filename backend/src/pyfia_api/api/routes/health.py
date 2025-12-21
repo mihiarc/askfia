@@ -51,7 +51,7 @@ async def debug_storage():
     from ...config import settings
     from ...services.storage import storage
 
-    # Test S3 connection
+    # Test S3 connection (legacy)
     s3_status = "not configured"
     s3_objects = []
     s3_client_exists = storage.s3 is not None
@@ -72,7 +72,26 @@ async def debug_storage():
     elif not s3_client_exists:
         s3_status = "client failed to initialize"
 
+    # Test MotherDuck connection
+    md_status = "not configured"
+    md_databases = []
+
+    if settings.motherduck_token:
+        try:
+            import duckdb
+            conn = duckdb.connect(f"md:?motherduck_token={settings.motherduck_token}")
+            result = conn.execute("SHOW DATABASES").fetchall()
+            md_databases = [row[0] for row in result if row[0].startswith("fia_")]
+            md_status = "connected"
+            conn.close()
+        except Exception as e:
+            md_status = f"error: {type(e).__name__}: {str(e)}"
+
     return {
+        "storage_mode": "motherduck" if settings.motherduck_token else "s3/local",
+        "motherduck_token_set": bool(settings.motherduck_token),
+        "motherduck_status": md_status,
+        "motherduck_databases": md_databases,
         "s3_bucket": storage.s3_bucket,
         "s3_prefix": storage.s3_prefix,
         "s3_endpoint": settings.s3_endpoint_url,
