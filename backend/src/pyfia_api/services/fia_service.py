@@ -93,6 +93,7 @@ class FIAService:
             logger.info(f"Using local storage for {state}")
             db_path = self._get_db_path(state)
             with FIA(db_path) as db:
+                db.clip_most_recent()
                 yield db
 
     async def query_area(
