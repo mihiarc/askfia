@@ -106,15 +106,21 @@ class MotherDuckBackend:
 
     # Columns that must be numeric for pyFIA operations
     NUMERIC_COLUMNS = {
+        # Status and identifier codes
         "STATUSCD", "COND_STATUS_CD", "EVALID", "STATECD", "COUNTYCD",
         "CONDID", "SUBP", "PLOT", "INVYR", "MEESSION", "CYCLE", "SUBCYCLE",
+        # Measurements
         "DIA", "HT", "ACTUALHT", "VOLCFNET", "VOLCFGRS", "VOLCSNET", "VOLCSGRS",
         "DRYBIO_AG", "DRYBIO_BG", "CARBON_AG", "CARBON_BG",
+        # Expansion factors
         "TPA_UNADJ", "CONDPROP_UNADJ", "EXPNS",
         "ADJ_FACTOR_MICR", "ADJ_FACTOR_SUBP", "ADJ_FACTOR_MACR",
         "MACRO_BREAKPOINT_DIA", "SPCD", "SPGRPCD",
+        # Classification codes
         "OWNGRPCD", "FORTYPCD", "SITECLCD", "RESERVCD",
         "TREECLCD", "STDORGCD",
+        # CN (Control Number) columns - must be consistent for joins
+        "CN", "PLT_CN", "PREV_TRE_CN", "TRE_CN", "STRATUM_CN", "EVAL_CN",
     }
 
     def build_select_clause(
@@ -122,8 +128,10 @@ class MotherDuckBackend:
     ) -> str:
         """Build SELECT clause for FIA data with appropriate type handling.
 
-        Ensures numeric columns are explicitly typed to avoid comparison issues
-        with pyFIA's estimation methods.
+        Ensures numeric columns and CN columns are explicitly cast to consistent
+        types to avoid comparison issues with pyFIA's estimation methods.
+        CN columns are cast to BIGINT for join compatibility.
+        Numeric columns are cast to DOUBLE for arithmetic operations.
         """
         schema = self.get_table_schema(table_name)
 
@@ -132,8 +140,12 @@ class MotherDuckBackend:
 
         select_parts = []
         for col in columns:
-            # Cast known numeric columns to DOUBLE to ensure type consistency
-            if col.upper() in self.NUMERIC_COLUMNS:
+            col_upper = col.upper()
+            # CN columns need BIGINT for join compatibility
+            if self.is_cn_column(col):
+                select_parts.append(f"CAST({col} AS BIGINT) AS {col}")
+            # Other numeric columns cast to DOUBLE
+            elif col_upper in self.NUMERIC_COLUMNS:
                 select_parts.append(f"CAST({col} AS DOUBLE) AS {col}")
             else:
                 select_parts.append(col)
