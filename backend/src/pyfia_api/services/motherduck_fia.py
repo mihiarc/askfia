@@ -104,23 +104,41 @@ class MotherDuckBackend:
         """Check if a column is a CN (Control Number) field."""
         return column_name.endswith("_CN") or column_name == "CN"
 
+    # Columns that must be numeric for pyFIA operations
+    NUMERIC_COLUMNS = {
+        "STATUSCD", "COND_STATUS_CD", "EVALID", "STATECD", "COUNTYCD",
+        "CONDID", "SUBP", "PLOT", "INVYR", "MEESSION", "CYCLE", "SUBCYCLE",
+        "DIA", "HT", "ACTUALHT", "VOLCFNET", "VOLCFGRS", "VOLCSNET", "VOLCSGRS",
+        "DRYBIO_AG", "DRYBIO_BG", "CARBON_AG", "CARBON_BG",
+        "TPA_UNADJ", "CONDPROP_UNADJ", "EXPNS",
+        "ADJ_FACTOR_MICR", "ADJ_FACTOR_SUBP", "ADJ_FACTOR_MACR",
+        "MACRO_BREAKPOINT_DIA", "SPCD", "SPGRPCD",
+        "OWNGRPCD", "FORTYPCD", "SITECLCD", "RESERVCD",
+        "TREECLCD", "STDORGCD",
+    }
+
     def build_select_clause(
         self, table_name: str, columns: Optional[List[str]] = None
     ) -> str:
-        """Build SELECT clause for FIA data.
+        """Build SELECT clause for FIA data with appropriate type handling.
 
-        CN (Control Number) columns are kept as their native types to ensure
-        compatibility with pyFIA's estimation methods which expect consistent
-        numeric types for joins and comparisons.
+        Ensures numeric columns are explicitly typed to avoid comparison issues
+        with pyFIA's estimation methods.
         """
         schema = self.get_table_schema(table_name)
 
         if columns is None:
             columns = list(schema.keys())
 
-        # Return all columns as-is, no type casting needed
-        # pyFIA handles type conversions internally
-        return ", ".join(columns)
+        select_parts = []
+        for col in columns:
+            # Cast known numeric columns to DOUBLE to ensure type consistency
+            if col.upper() in self.NUMERIC_COLUMNS:
+                select_parts.append(f"CAST({col} AS DOUBLE) AS {col}")
+            else:
+                select_parts.append(col)
+
+        return ", ".join(select_parts)
 
     def read_table(
         self,
