@@ -378,6 +378,7 @@ class FIAAgent:
         # Check for tool calls
         if response.tool_calls:
             tool_calls_count = len(response.tool_calls)
+            tool_results = {}  # Store results to avoid re-execution
 
             for tool_call in response.tool_calls:
                 # Track query type from first tool call
@@ -396,33 +397,36 @@ class FIAAgent:
                 if tool_func:
                     try:
                         result = await tool_func.ainvoke(tool_call["args"])
+                        tool_results[tool_call["id"]] = result  # Cache result
                         yield {
                             "type": "tool_result",
                             "tool_call_id": tool_call["id"],
                             "result": result,
                         }
                     except Exception as e:
+                        error_result = f"Error: {e}"
+                        tool_results[tool_call["id"]] = error_result
+                        logger.error(f"Tool execution failed: {e}", exc_info=True)
                         yield {
                             "type": "tool_result",
                             "tool_call_id": tool_call["id"],
-                            "result": f"Error: {e}",
+                            "result": error_result,
                         }
 
             # Get final response after tool execution
             # Add tool results to messages and get completion
+            from langchain_core.messages import ToolMessage
+
             lc_messages.append(response)
             for tool_call in response.tool_calls:
-                tool_func = {t.name: t for t in TOOLS}.get(tool_call["name"])
-                if tool_func:
-                    result = await tool_func.ainvoke(tool_call["args"])
-                    from langchain_core.messages import ToolMessage
-
-                    lc_messages.append(
-                        ToolMessage(
-                            content=result,
-                            tool_call_id=tool_call["id"],
-                        )
+                # Reuse cached result instead of re-executing
+                result = tool_results.get(tool_call["id"], "Tool execution failed")
+                lc_messages.append(
+                    ToolMessage(
+                        content=result,
+                        tool_call_id=tool_call["id"],
                     )
+                )
 
             final_response = await self.llm.ainvoke(lc_messages)
 
