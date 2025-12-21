@@ -121,13 +121,13 @@ async def debug_query(step: int = 10):
             completed_steps.append("   - MotherDuckFIA created")
 
         if step >= 8:
-            completed_steps.append("8. Running area query")
-            from pyfia import area
+            completed_steps.append("8. Running area query (server-side)")
             from ...config import settings
             from ...services.motherduck_fia import MotherDuckFIA
             gc.collect()
             db = MotherDuckFIA(state="GA", motherduck_token=settings.motherduck_token)
-            result_df = area(db, land_type="forest")
+            # Use our server-side area method instead of pyFIA's memory-intensive one
+            result_df = db.area(land_type="forest")
             completed_steps.append(f"   - Query completed, type: {type(result_df)}")
 
         if step >= 9:

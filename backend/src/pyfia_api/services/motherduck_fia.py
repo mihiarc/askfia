@@ -42,13 +42,19 @@ class MotherDuckBackend:
         self._schema_cache: Dict[str, Dict[str, str]] = {}
 
     def connect(self) -> None:
-        """Establish MotherDuck connection."""
+        """Establish MotherDuck connection with memory limits."""
         if self._connection is not None:
             return
 
         try:
             conn_string = f"md:{self.database}?motherduck_token={self.motherduck_token}"
             self._connection = duckdb.connect(conn_string, read_only=self.read_only)
+
+            # Set memory limits to avoid OOM on constrained environments
+            # Render free tier has 512MB RAM, reserve some for Python
+            self._connection.execute("SET memory_limit='256MB'")
+            self._connection.execute("SET temp_directory='/tmp/duckdb_temp'")
+
             logger.info(f"Connected to MotherDuck database: {self.database}")
         except Exception as e:
             logger.error(f"Failed to connect to MotherDuck: {e}")
@@ -445,11 +451,20 @@ class MotherDuckFIA:
 
         return conds.collect()
 
-    def prepare_estimation_data(self) -> Dict[str, pl.DataFrame]:
-        """Prepare standard set of tables for estimation functions."""
+    def prepare_estimation_data(
+        self, include_trees: bool = True
+    ) -> Dict[str, pl.DataFrame]:
+        """Prepare standard set of tables for estimation functions.
+
+        Parameters
+        ----------
+        include_trees : bool
+            Whether to include the TREE table. Set to False for area
+            estimation which doesn't need tree data (saves memory).
+        """
         if not self.evalid and not self.most_recent:
-            warnings.warn("No EVALID filter set. Using most recent volume evaluation.")
-            self.clip_most_recent(eval_type="VOL")
+            warnings.warn("No EVALID filter set. Using most recent ALL evaluation.")
+            self.clip_most_recent(eval_type="ALL")
 
         if "POP_STRATUM" not in self.tables:
             self.load_table("POP_STRATUM")
@@ -459,8 +474,11 @@ class MotherDuckFIA:
             self.load_table("POP_ESTN_UNIT")
 
         plots = self.get_plots()
-        trees = self.get_trees()
         conds = self.get_conditions()
+
+        # Only load TREE table if needed (volume, biomass, TPA)
+        # Area estimation doesn't need tree data
+        trees = self.get_trees() if include_trees else pl.DataFrame()
 
         plot_cns = plots["CN"].to_list()
         if self.evalid is None:
@@ -516,9 +534,127 @@ class MotherDuckFIA:
         return mortality(self, **kwargs)
 
     def area(self, **kwargs) -> pl.DataFrame:
-        """Estimate forest area."""
-        from pyfia.estimation.estimators.area import area
-        return area(self, **kwargs)
+        """Estimate forest area using server-side aggregation.
+
+        This is a memory-optimized implementation that pushes aggregation
+        to MotherDuck instead of loading full tables into memory.
+        """
+        land_type = kwargs.get("land_type", "forest")
+        grp_by = kwargs.get("grp_by", None)
+
+        # Use our optimized server-side implementation
+        return self._area_server_side(land_type=land_type, grp_by=grp_by)
+
+    def _area_server_side(
+        self, land_type: str = "forest", grp_by: str | None = None
+    ) -> pl.DataFrame:
+        """Server-side area estimation - runs aggregation on MotherDuck.
+
+        This avoids loading full tables into memory by doing the estimation
+        calculations directly in SQL on the MotherDuck server.
+        """
+        # First, find the most recent EVALID for area estimation
+        if not self.evalid:
+            self.clip_most_recent(eval_type="ALL")
+
+        if not self.evalid:
+            raise ValueError("No EVALID found for area estimation")
+
+        evalid_str = ", ".join(str(e) for e in self.evalid)
+
+        # Build land type filter
+        if land_type == "forest":
+            land_filter = "COND_STATUS_CD = 1"
+        elif land_type == "timber":
+            land_filter = "COND_STATUS_CD = 1 AND RESERVCD = 0 AND SITECLCD IN (1, 2, 3, 4, 5, 6)"
+        elif land_type == "reserved":
+            land_filter = "COND_STATUS_CD = 1 AND RESERVCD = 1"
+        else:
+            land_filter = "1=1"  # All land
+
+        # Build grouping
+        group_cols = ""
+        select_group = ""
+        if grp_by:
+            group_cols = f", c.{grp_by}"
+            select_group = f"c.{grp_by}, "
+
+        # Server-side area estimation query
+        # This follows the Bechtold & Patterson (2005) methodology
+        query = f"""
+        WITH plot_areas AS (
+            SELECT
+                {select_group}
+                ppsa.STRATUM_CN,
+                ppsa.PLT_CN,
+                SUM(c.CONDPROP_UNADJ * c.MICRPROP_UNADJ) as PROP_FOREST
+            FROM COND c
+            JOIN POP_PLOT_STRATUM_ASSGN ppsa ON c.PLT_CN = ppsa.PLT_CN
+            WHERE ppsa.EVALID IN ({evalid_str})
+            AND {land_filter}
+            GROUP BY ppsa.STRATUM_CN, ppsa.PLT_CN{group_cols}
+        ),
+        stratum_estimates AS (
+            SELECT
+                {select_group}
+                ps.CN as STRATUM_CN,
+                ps.ESTN_UNIT_CN,
+                ps.EXPNS,
+                ps.P1POINTCNT,
+                AVG(pa.PROP_FOREST) as MEAN_PROP,
+                COUNT(*) as N_PLOTS,
+                CASE WHEN COUNT(*) > 1
+                    THEN STDDEV_SAMP(pa.PROP_FOREST)
+                    ELSE 0
+                END as STD_PROP
+            FROM POP_STRATUM ps
+            LEFT JOIN plot_areas pa ON ps.CN = pa.STRATUM_CN
+            WHERE ps.EVALID IN ({evalid_str})
+            GROUP BY ps.CN, ps.ESTN_UNIT_CN, ps.EXPNS, ps.P1POINTCNT{group_cols}
+        ),
+        estn_unit_totals AS (
+            SELECT
+                {select_group}
+                peu.CN as ESTN_UNIT_CN,
+                SUM(se.EXPNS * COALESCE(se.MEAN_PROP, 0)) as AREA,
+                SUM(se.N_PLOTS) as N_PLOTS,
+                -- Variance calculation
+                SUM(
+                    CASE WHEN se.N_PLOTS > 1
+                    THEN POWER(se.EXPNS, 2) * POWER(se.STD_PROP, 2) / se.N_PLOTS
+                    ELSE 0
+                    END
+                ) as VARIANCE
+            FROM POP_ESTN_UNIT peu
+            JOIN stratum_estimates se ON peu.CN = se.ESTN_UNIT_CN
+            WHERE peu.EVALID IN ({evalid_str})
+            GROUP BY peu.CN{group_cols}
+        )
+        SELECT
+            {select_group.rstrip(', ')}
+            SUM(AREA) as AREA,
+            SUM(N_PLOTS) as N_PLOTS,
+            SUM(VARIANCE) as VARIANCE,
+            CASE WHEN SUM(AREA) > 0
+                THEN 100.0 * SQRT(SUM(VARIANCE)) / SUM(AREA)
+                ELSE 0
+            END as AREA_SE_PERCENT
+        FROM estn_unit_totals
+        {f'GROUP BY {grp_by}' if grp_by else ''}
+        ORDER BY AREA DESC
+        """
+
+        logger.debug(f"Running server-side area query: {query[:200]}...")
+
+        try:
+            result = self._backend.execute_query(query)
+            return result
+        except Exception as e:
+            logger.error(f"Server-side area estimation failed: {e}")
+            # Fall back to pyFIA implementation if server-side fails
+            logger.info("Falling back to pyFIA implementation")
+            from pyfia.estimation.estimators.area import area
+            return area(self, land_type=land_type, grp_by=grp_by)
 
     def growth(self, **kwargs) -> pl.DataFrame:
         """Estimate annual growth."""

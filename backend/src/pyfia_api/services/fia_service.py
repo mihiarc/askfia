@@ -103,15 +103,15 @@ class FIAService:
         grp_by: str | None = None,
     ) -> dict:
         """Query forest area across states."""
-        from pyfia import area
-
         results = []
 
         for state in states:
             state = state.upper()
 
             with self._get_fia_connection(state) as db:
-                result_df = area(db, land_type=land_type, grp_by=grp_by)
+                # Use db.area() method which uses server-side aggregation for MotherDuck
+                # This avoids loading full tables into memory
+                result_df = db.area(land_type=land_type, grp_by=grp_by)
                 df = result_df.to_pandas() if hasattr(result_df, "to_pandas") else result_df
                 df["STATE"] = state
                 results.append(df)
