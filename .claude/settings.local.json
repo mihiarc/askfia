@@ -9,7 +9,8 @@
       "Bash(git add:*)",
       "Bash(git commit:*)",
       "Bash(uv run python:*)",
-      "mcp__netlify__netlify-deploy-services-reader"
+      "mcp__netlify__netlify-deploy-services-reader",
+      "Bash(python3:*)"
     ]
   }
 }

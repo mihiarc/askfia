@@ -46,76 +46,129 @@ async def readiness_check():
 
 
 @router.get("/debug/query")
-async def debug_query():
-    """Debug: test a MotherDuck query directly."""
+async def debug_query(step: int = 10):
+    """Debug: test a MotherDuck query directly with step-by-step execution.
+
+    Use step parameter to limit execution:
+    - step=1-4: Basic MotherDuck connectivity tests
+    - step=5-6: Import tests
+    - step=7: Create MotherDuckFIA (may OOM)
+    - step=8-10: Run actual query (may OOM)
+    """
     import traceback
     import sys
+    import gc
+    import resource
 
-    steps = []
+    completed_steps = []
+
+    # Get memory info
+    try:
+        mem_info = resource.getrusage(resource.RUSAGE_SELF)
+        max_rss_mb = mem_info.ru_maxrss / 1024  # Convert to MB on Linux
+    except Exception:
+        max_rss_mb = 0
 
     try:
-        steps.append("1. Importing settings")
-        from ...config import settings
-        steps.append(f"   - motherduck_token set: {bool(settings.motherduck_token)}")
+        completed_steps.append(f"0. Memory at start: {max_rss_mb:.1f} MB")
 
-        steps.append("2. Importing fia_service")
-        from ...services.fia_service import fia_service
-        steps.append("   - fia_service imported")
+        if step >= 1:
+            completed_steps.append("1. Importing settings")
+            from ...config import settings
+            completed_steps.append(f"   - motherduck_token set: {bool(settings.motherduck_token)}")
 
-        steps.append("3. Testing raw MotherDuck connection")
-        import duckdb
-        conn = duckdb.connect(f"md:?motherduck_token={settings.motherduck_token}")
-        result = conn.execute("SELECT 1 as test").fetchone()
-        steps.append(f"   - Basic query result: {result}")
-        conn.close()
+        if step >= 2:
+            completed_steps.append("2. Importing duckdb")
+            import duckdb
+            completed_steps.append(f"   - duckdb version: {duckdb.__version__}")
 
-        steps.append("4. Testing MotherDuck database access")
-        conn = duckdb.connect(f"md:?motherduck_token={settings.motherduck_token}")
-        result = conn.execute("SHOW DATABASES").fetchall()
-        fia_dbs = [r[0] for r in result if r[0].startswith("fia_")]
-        steps.append(f"   - FIA databases: {fia_dbs}")
-        conn.close()
+        if step >= 3:
+            completed_steps.append("3. Testing raw MotherDuck connection")
+            from ...config import settings
+            import duckdb
+            conn = duckdb.connect(f"md:?motherduck_token={settings.motherduck_token}")
+            result = conn.execute("SELECT 1 as test").fetchone()
+            completed_steps.append(f"   - Basic query result: {result}")
+            conn.close()
 
-        steps.append("5. Testing pyfia import")
-        from pyfia import area, FIA
-        steps.append("   - pyfia imported successfully")
+        if step >= 4:
+            completed_steps.append("4. Testing MotherDuck database access")
+            from ...config import settings
+            import duckdb
+            conn = duckdb.connect(f"md:?motherduck_token={settings.motherduck_token}")
+            result = conn.execute("SHOW DATABASES").fetchall()
+            fia_dbs = [r[0] for r in result if r[0].startswith("fia_")]
+            completed_steps.append(f"   - FIA databases: {fia_dbs}")
+            conn.close()
 
-        steps.append("6. Testing MotherDuckFIA import")
-        from ...services.motherduck_fia import MotherDuckFIA
-        steps.append("   - MotherDuckFIA imported")
+        if step >= 5:
+            completed_steps.append("5. Testing pyfia import")
+            from pyfia import area
+            completed_steps.append("   - pyfia imported successfully")
+            gc.collect()  # Force garbage collection
 
-        steps.append("7. Creating MotherDuckFIA connection for GA")
-        db = MotherDuckFIA(state="GA", motherduck_token=settings.motherduck_token)
-        steps.append("   - MotherDuckFIA created")
+        if step >= 6:
+            completed_steps.append("6. Testing MotherDuckFIA import")
+            from ...services.motherduck_fia import MotherDuckFIA
+            completed_steps.append("   - MotherDuckFIA imported")
 
-        steps.append("8. Running area query")
-        result_df = area(db, land_type="forest")
-        steps.append(f"   - Query completed, type: {type(result_df)}")
+        if step >= 7:
+            completed_steps.append("7. Creating MotherDuckFIA connection for GA")
+            from ...config import settings
+            from ...services.motherduck_fia import MotherDuckFIA
+            gc.collect()  # Clean up before creating connection
+            db = MotherDuckFIA(state="GA", motherduck_token=settings.motherduck_token)
+            completed_steps.append("   - MotherDuckFIA created")
 
-        steps.append("9. Converting to pandas")
-        df = result_df.to_pandas() if hasattr(result_df, "to_pandas") else result_df
-        steps.append(f"   - DataFrame shape: {df.shape}")
-        steps.append(f"   - Columns: {list(df.columns)}")
+        if step >= 8:
+            completed_steps.append("8. Running area query")
+            from pyfia import area
+            from ...config import settings
+            from ...services.motherduck_fia import MotherDuckFIA
+            gc.collect()
+            db = MotherDuckFIA(state="GA", motherduck_token=settings.motherduck_token)
+            result_df = area(db, land_type="forest")
+            completed_steps.append(f"   - Query completed, type: {type(result_df)}")
 
-        steps.append("10. Closing connection")
-        db._backend.disconnect()
-        steps.append("   - Connection closed")
+        if step >= 9:
+            completed_steps.append("9. Converting to pandas")
+            df = result_df.to_pandas() if hasattr(result_df, "to_pandas") else result_df
+            completed_steps.append(f"   - DataFrame shape: {df.shape}")
+            completed_steps.append(f"   - Columns: {list(df.columns)}")
 
-        # Extract result
-        est_col = "AREA" if "AREA" in df.columns else "ESTIMATE"
-        total = float(df[est_col].sum()) if est_col in df.columns else 0.0
+        if step >= 10:
+            completed_steps.append("10. Extracting results and closing")
+            est_col = "AREA" if "AREA" in df.columns else "ESTIMATE"
+            total = float(df[est_col].sum()) if est_col in df.columns else 0.0
+            db._backend.disconnect()
+            gc.collect()
+
+            # Get final memory
+            try:
+                mem_info = resource.getrusage(resource.RUSAGE_SELF)
+                final_rss_mb = mem_info.ru_maxrss / 1024
+            except Exception:
+                final_rss_mb = 0
+            completed_steps.append(f"   - Final memory: {final_rss_mb:.1f} MB")
+
+            return {
+                "status": "success",
+                "steps": completed_steps,
+                "total_area_acres": total,
+                "columns": list(df.columns),
+                "sample": df.head(2).to_dict(),
+            }
 
         return {
-            "status": "success",
-            "steps": steps,
-            "total_area_acres": total,
-            "columns": list(df.columns),
-            "sample": df.head(2).to_dict(),
+            "status": "partial",
+            "max_step": step,
+            "steps": completed_steps,
+            "message": f"Completed steps 1-{step} successfully",
         }
     except Exception as e:
         return {
             "status": "error",
-            "steps": steps,
+            "steps": completed_steps,
             "error_type": type(e).__name__,
             "error": str(e),
             "traceback": traceback.format_exc(),
