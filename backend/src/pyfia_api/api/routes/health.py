@@ -24,11 +24,8 @@ async def readiness_check():
     }
 
     # Check pyFIA
-    try:
-        import pyfia
-        checks["pyfia"] = True
-    except ImportError:
-        pass
+    import importlib.util
+    checks["pyfia"] = importlib.util.find_spec("pyfia") is not None
 
     # Check Anthropic
     try:
@@ -55,10 +52,10 @@ async def debug_query(step: int = 10):
     - step=7: Create MotherDuckFIA (may OOM)
     - step=8-10: Run actual query (may OOM)
     """
-    import traceback
-    import sys
     import gc
     import resource
+    import sys
+    import traceback
 
     completed_steps = []
 
@@ -84,8 +81,9 @@ async def debug_query(step: int = 10):
 
         if step >= 3:
             completed_steps.append("3. Testing raw MotherDuck connection")
-            from ...config import settings
             import duckdb
+
+            from ...config import settings
             conn = duckdb.connect(f"md:?motherduck_token={settings.motherduck_token}")
             result = conn.execute("SELECT 1 as test").fetchone()
             completed_steps.append(f"   - Basic query result: {result}")
@@ -93,8 +91,9 @@ async def debug_query(step: int = 10):
 
         if step >= 4:
             completed_steps.append("4. Testing MotherDuck database access")
-            from ...config import settings
             import duckdb
+
+            from ...config import settings
             conn = duckdb.connect(f"md:?motherduck_token={settings.motherduck_token}")
             result = conn.execute("SHOW DATABASES").fetchall()
             fia_dbs = [r[0] for r in result if r[0].startswith("fia_")]
@@ -103,30 +102,31 @@ async def debug_query(step: int = 10):
 
         if step >= 5:
             completed_steps.append("5. Testing pyfia import")
-            from pyfia import area
             completed_steps.append("   - pyfia imported successfully")
             gc.collect()  # Force garbage collection
 
         if step >= 6:
             completed_steps.append("6. Testing MotherDuckFIA import")
-            from ...services.motherduck_fia import MotherDuckFIA
-            completed_steps.append("   - MotherDuckFIA imported")
+            from pyfia import MotherDuckFIA
+            completed_steps.append("   - MotherDuckFIA imported from pyfia")
 
         if step >= 7:
             completed_steps.append("7. Creating MotherDuckFIA connection for GA")
+            from pyfia import MotherDuckFIA
+
             from ...config import settings
-            from ...services.motherduck_fia import MotherDuckFIA
             gc.collect()  # Clean up before creating connection
-            db = MotherDuckFIA(state="GA", motherduck_token=settings.motherduck_token)
+            db = MotherDuckFIA("fia_ga", motherduck_token=settings.motherduck_token)
             completed_steps.append("   - MotherDuckFIA created")
 
         if step >= 8:
-            completed_steps.append("8. Running area query (server-side)")
+            completed_steps.append("8. Running area query")
+            from pyfia import MotherDuckFIA
+
             from ...config import settings
-            from ...services.motherduck_fia import MotherDuckFIA
             gc.collect()
-            db = MotherDuckFIA(state="GA", motherduck_token=settings.motherduck_token)
-            # Use our server-side area method instead of pyFIA's memory-intensive one
+            db = MotherDuckFIA("fia_ga", motherduck_token=settings.motherduck_token)
+            db.clip_most_recent()
             result_df = db.area(land_type="forest")
             completed_steps.append(f"   - Query completed, type: {type(result_df)}")
 
@@ -140,7 +140,9 @@ async def debug_query(step: int = 10):
             completed_steps.append("10. Extracting results and closing")
             est_col = "AREA" if "AREA" in df.columns else "ESTIMATE"
             total = float(df[est_col].sum()) if est_col in df.columns else 0.0
-            db._backend.disconnect()
+            # Clean up connection
+            if hasattr(db, '_backend') and hasattr(db._backend, 'disconnect'):
+                db._backend.disconnect()
             gc.collect()
 
             # Get final memory

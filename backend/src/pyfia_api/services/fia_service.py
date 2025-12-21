@@ -1,8 +1,8 @@
 """Service layer for pyFIA operations."""
 
 import logging
+from collections.abc import Generator
 from contextlib import contextmanager
-from typing import Generator
 
 import pandas as pd
 

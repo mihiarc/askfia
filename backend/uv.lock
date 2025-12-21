@@ -1330,7 +1330,7 @@ wheels = [
 [[package]]
 name = "pyfia"
 version = "1.0.0b1"
-source = { registry = "https://pypi.org/simple" }
+source = { git = "https://github.com/mihiarc/pyfia.git?rev=main#3daf10a6b9d4970065b2662470a82e0a9a46ce58" }
 dependencies = [
     { name = "connectorx" },
     { name = "duckdb" },
@@ -1343,10 +1343,6 @@ dependencies = [
     { name = "pyyaml" },
     { name = "requests" },
     { name = "rich" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/fc/87/262deeb8354a5c95d1e4cdb116cf1f98e93482bce7512e7e35f9b6e04d09/pyfia-1.0.0b1.tar.gz", hash = "sha256:9c83fbf44f7f3e166a6e9f1c58ee1f1bc43af996c9889ac788baab87cb2614c8", size = 132697 }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/31/78/d265931990db8f623f38a5e71e6d235ba00ca6925e8e797afa8250c6726c/pyfia-1.0.0b1-py3-none-any.whl", hash = "sha256:6b758a1efeb2ff7febf13bae185629e8338dbe4360191f9c29a8c79f762d5ddc", size = 166212 },
 ]
 
 [[package]]
@@ -1391,7 +1387,7 @@ requires-dist = [
     { name = "polars", specifier = ">=1.0.0" },
     { name = "pydantic", specifier = ">=2.10.0" },
     { name = "pydantic-settings", specifier = ">=2.6.0" },
-    { name = "pyfia", specifier = ">=1.0.0b1" },
+    { name = "pyfia", git = "https://github.com/mihiarc/pyfia.git?rev=main" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=6.0.0" },
