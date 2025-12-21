@@ -107,20 +107,20 @@ class MotherDuckBackend:
     def build_select_clause(
         self, table_name: str, columns: Optional[List[str]] = None
     ) -> str:
-        """Build SELECT clause with appropriate type casting for FIA data."""
+        """Build SELECT clause for FIA data.
+
+        CN (Control Number) columns are kept as their native types to ensure
+        compatibility with pyFIA's estimation methods which expect consistent
+        numeric types for joins and comparisons.
+        """
         schema = self.get_table_schema(table_name)
 
         if columns is None:
             columns = list(schema.keys())
 
-        select_parts = []
-        for col in columns:
-            if self.is_cn_column(col):
-                select_parts.append(f"CAST({col} AS VARCHAR) AS {col}")
-            else:
-                select_parts.append(col)
-
-        return ", ".join(select_parts)
+        # Return all columns as-is, no type casting needed
+        # pyFIA handles type conversions internally
+        return ", ".join(columns)
 
     def read_table(
         self,
@@ -196,7 +196,7 @@ class MotherDuckFIA:
         self.evalid: Optional[List[int]] = None
         self.most_recent: bool = False
         self.state_filter: Optional[List[int]] = None
-        self._valid_plot_cns: Optional[List[str]] = None
+        self._valid_plot_cns: Optional[List[Any]] = None
 
         self._backend = MotherDuckBackend(
             database=self.database,
@@ -229,7 +229,8 @@ class MotherDuckFIA:
 
                 for i in range(0, len(valid_plot_cns), batch_size):
                     batch = valid_plot_cns[i : i + batch_size]
-                    cn_str = ", ".join(f"'{cn}'" for cn in batch)
+                    # CN values are numeric, don't quote them
+                    cn_str = ", ".join(str(cn) for cn in batch)
                     plt_cn_where = f"PLT_CN IN ({cn_str})"
 
                     if base_where_clause:
@@ -263,8 +264,11 @@ class MotherDuckFIA:
         self.tables[table_name] = df
         return self.tables[table_name]
 
-    def _get_valid_plot_cns(self) -> Optional[List[str]]:
-        """Get plot CNs valid for the current EVALID filter."""
+    def _get_valid_plot_cns(self) -> Optional[List[Any]]:
+        """Get plot CNs valid for the current EVALID filter.
+
+        Returns a list of PLT_CN values in their native type (numeric).
+        """
         if self.evalid is None:
             return None
 
@@ -515,22 +519,30 @@ class MotherDuckFIA:
     # Estimation methods - delegate to pyFIA
     def tpa(self, **kwargs) -> pl.DataFrame:
         """Estimate trees per acre."""
-        from pyfia.estimation.tpa import tpa
+        from pyfia.estimation import tpa
         return tpa(self, **kwargs)
 
     def biomass(self, **kwargs) -> pl.DataFrame:
-        """Estimate biomass."""
-        from pyfia.estimation.biomass import biomass
+        """Estimate biomass using pyFIA's validated estimation methods.
+
+        This delegates to pyFIA's biomass function which implements the proper
+        Bechtold & Patterson (2005) design-based estimation methodology.
+        """
+        from pyfia.estimation import biomass
         return biomass(self, **kwargs)
 
     def volume(self, **kwargs) -> pl.DataFrame:
-        """Estimate volume."""
-        from pyfia.estimation.volume import volume
+        """Estimate volume using pyFIA's validated estimation methods.
+
+        This delegates to pyFIA's volume function which implements the proper
+        Bechtold & Patterson (2005) design-based estimation methodology.
+        """
+        from pyfia.estimation import volume
         return volume(self, **kwargs)
 
     def mortality(self, **kwargs) -> pl.DataFrame:
-        """Estimate mortality."""
-        from pyfia.estimation.estimators.mortality import mortality
+        """Estimate mortality using pyFIA's validated estimation methods."""
+        from pyfia.estimation import mortality
         return mortality(self, **kwargs)
 
     def area(self, **kwargs) -> pl.DataFrame:
@@ -541,7 +553,7 @@ class MotherDuckFIA:
         The optimized pyFIA keeps operations as LazyFrames to reduce memory
         usage on cloud backends like MotherDuck.
         """
-        from pyfia.estimation.estimators.area import area
+        from pyfia.estimation import area
         return area(self, **kwargs)
 
     def _area_server_side(
@@ -657,18 +669,18 @@ class MotherDuckFIA:
             ) from e
 
     def growth(self, **kwargs) -> pl.DataFrame:
-        """Estimate annual growth."""
-        from pyfia.estimation.estimators.growth import growth
+        """Estimate annual growth using pyFIA's validated estimation methods."""
+        from pyfia.estimation import growth
         return growth(self, **kwargs)
 
     def removals(self, **kwargs) -> pl.DataFrame:
-        """Estimate annual removals/harvest."""
-        from pyfia.estimation.estimators.removals import removals
+        """Estimate annual removals/harvest using pyFIA's validated estimation methods."""
+        from pyfia.estimation import removals
         return removals(self, **kwargs)
 
     def carbon_flux(self, **kwargs) -> pl.DataFrame:
-        """Estimate annual net carbon flux."""
-        from pyfia.estimation.estimators.carbon_flux import carbon_flux
+        """Estimate annual net carbon flux using pyFIA's validated estimation methods."""
+        from pyfia.estimation import carbon_flux
         return carbon_flux(self, **kwargs)
 
 
