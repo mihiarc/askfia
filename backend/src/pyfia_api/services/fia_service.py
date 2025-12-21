@@ -79,14 +79,13 @@ class FIAService:
 
         # Use MotherDuck if token is configured
         if self._motherduck_token:
-            from .motherduck_fia import MotherDuckFIA
+            from pyfia import MotherDuckFIA
 
             logger.info(f"Using MotherDuck for {state}")
-            db = MotherDuckFIA(state=state, motherduck_token=self._motherduck_token)
-            try:
+            database = f"fia_{state.lower()}"
+            with MotherDuckFIA(database, motherduck_token=self._motherduck_token) as db:
+                db.clip_most_recent()
                 yield db
-            finally:
-                db._backend.disconnect()
         else:
             # Fall back to local storage
             from pyfia import FIA
