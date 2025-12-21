@@ -534,16 +534,15 @@ class MotherDuckFIA:
         return mortality(self, **kwargs)
 
     def area(self, **kwargs) -> pl.DataFrame:
-        """Estimate forest area using server-side aggregation.
+        """Estimate forest area using pyFIA's validated estimation methods.
 
-        This is a memory-optimized implementation that pushes aggregation
-        to MotherDuck instead of loading full tables into memory.
+        This delegates to pyFIA's area function which implements the proper
+        Bechtold & Patterson (2005) design-based estimation methodology.
+        The optimized pyFIA keeps operations as LazyFrames to reduce memory
+        usage on cloud backends like MotherDuck.
         """
-        land_type = kwargs.get("land_type", "forest")
-        grp_by = kwargs.get("grp_by", None)
-
-        # Use our optimized server-side implementation
-        return self._area_server_side(land_type=land_type, grp_by=grp_by)
+        from pyfia.estimation.area import area
+        return area(self, **kwargs)
 
     def _area_server_side(
         self, land_type: str = "forest", grp_by: str | None = None
