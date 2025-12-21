@@ -119,8 +119,6 @@ class MotherDuckBackend:
         # Classification codes
         "OWNGRPCD", "FORTYPCD", "SITECLCD", "RESERVCD",
         "TREECLCD", "STDORGCD",
-        # CN (Control Number) columns - must be consistent for joins
-        "CN", "PLT_CN", "PREV_TRE_CN", "TRE_CN", "STRATUM_CN", "EVAL_CN",
     }
 
     def build_select_clause(
@@ -128,10 +126,11 @@ class MotherDuckBackend:
     ) -> str:
         """Build SELECT clause for FIA data with appropriate type handling.
 
-        Ensures numeric columns and CN columns are explicitly cast to consistent
-        types to avoid comparison issues with pyFIA's estimation methods.
-        CN columns are cast to BIGINT for join compatibility.
-        Numeric columns are cast to DOUBLE for arithmetic operations.
+        CN columns are cast to VARCHAR for consistent string-based joins.
+        CN values are very large (>1e22) and stored as DOUBLE in MotherDuck,
+        which overflows BIGINT. VARCHAR ensures consistent joins across tables.
+
+        Other numeric columns are cast to DOUBLE for arithmetic operations.
         """
         schema = self.get_table_schema(table_name)
 
@@ -141,9 +140,9 @@ class MotherDuckBackend:
         select_parts = []
         for col in columns:
             col_upper = col.upper()
-            # CN columns need BIGINT for join compatibility
+            # CN columns use VARCHAR for consistent joins (values too large for BIGINT)
             if self.is_cn_column(col):
-                select_parts.append(f"CAST({col} AS BIGINT) AS {col}")
+                select_parts.append(f"CAST({col} AS VARCHAR) AS {col}")
             # Other numeric columns cast to DOUBLE
             elif col_upper in self.NUMERIC_COLUMNS:
                 select_parts.append(f"CAST({col} AS DOUBLE) AS {col}")
@@ -259,9 +258,9 @@ class MotherDuckFIA:
 
                 for i in range(0, len(valid_plot_cns), batch_size):
                     batch = valid_plot_cns[i : i + batch_size]
-                    # CN values are numeric, don't quote them
-                    cn_str = ", ".join(str(cn) for cn in batch)
-                    plt_cn_where = f"PLT_CN IN ({cn_str})"
+                    # CN values are cast to VARCHAR, so quote them for comparison
+                    cn_str = ", ".join(f"'{cn}'" for cn in batch)
+                    plt_cn_where = f"CAST(PLT_CN AS VARCHAR) IN ({cn_str})"
 
                     if base_where_clause:
                         where_clause = f"{base_where_clause} AND {plt_cn_where}"
