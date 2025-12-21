@@ -1,0 +1,128 @@
+name: Build FIA Cache
+
+on:
+  # Monthly rebuild on the 1st at 2am UTC
+  schedule:
+    - cron: '0 2 1 * *'
+
+  # Manual trigger with optional state selection
+  workflow_dispatch:
+    inputs:
+      states:
+        description: 'States to build (comma-separated, e.g., GA,NC,SC). Leave empty for all states.'
+        required: false
+        default: ''
+      skip_existing:
+        description: 'Skip states that already exist in R2'
+        type: boolean
+        default: true
+
+env:
+  S3_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT_URL }}
+  S3_ACCESS_KEY: ${{ secrets.R2_ACCESS_KEY_ID }}
+  S3_SECRET_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+  S3_REGION: auto
+  FIA_S3_BUCKET: ${{ secrets.R2_BUCKET_NAME }}
+  FIA_S3_PREFIX: fia-duckdb
+
+jobs:
+  build-cache:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360  # 6 hours for full rebuild
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # Split states into batches for parallel processing
+        batch: [1, 2, 3, 4, 5]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        working-directory: backend
+        run: |
+          uv sync
+          uv pip install boto3
+
+      - name: Determine states for this batch
+        id: states
+        run: |
+          # All states split into 5 batches
+          ALL_STATES="AL AK AZ AR CA CO CT DE FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY"
+
+          # Convert to array
+          read -ra STATE_ARRAY <<< "$ALL_STATES"
+          TOTAL=${#STATE_ARRAY[@]}
+          BATCH_SIZE=$(( (TOTAL + 4) / 5 ))  # Ceiling division
+
+          START=$(( (${{ matrix.batch }} - 1) * BATCH_SIZE ))
+          END=$(( START + BATCH_SIZE ))
+
+          # Get this batch's states
+          BATCH_STATES=""
+          for i in $(seq $START $((END - 1))); do
+            if [ $i -lt $TOTAL ]; then
+              BATCH_STATES="$BATCH_STATES ${STATE_ARRAY[$i]}"
+            fi
+          done
+
+          # Override with manual input if provided
+          if [ -n "${{ github.event.inputs.states }}" ]; then
+            # Only process states from this batch that are in the input
+            INPUT_STATES="${{ github.event.inputs.states }}"
+            INPUT_STATES="${INPUT_STATES//,/ }"  # Replace commas with spaces
+            FILTERED=""
+            for state in $BATCH_STATES; do
+              if [[ " $INPUT_STATES " =~ " $state " ]]; then
+                FILTERED="$FILTERED $state"
+              fi
+            done
+            BATCH_STATES="$FILTERED"
+          fi
+
+          echo "states=$BATCH_STATES" >> $GITHUB_OUTPUT
+          echo "Building states: $BATCH_STATES"
+
+      - name: Build and upload cache
+        if: steps.states.outputs.states != ''
+        working-directory: backend
+        run: |
+          SKIP_FLAG=""
+          if [ "${{ github.event.inputs.skip_existing }}" = "true" ]; then
+            SKIP_FLAG="--skip-existing"
+          fi
+
+          uv run python scripts/build_fia_cache.py \
+            --states ${{ steps.states.outputs.states }} \
+            $SKIP_FLAG
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Batch ${{ matrix.batch }} Complete" >> $GITHUB_STEP_SUMMARY
+          echo "States processed: ${{ steps.states.outputs.states }}" >> $GITHUB_STEP_SUMMARY
+
+  notify:
+    runs-on: ubuntu-latest
+    needs: build-cache
+    if: always()
+
+    steps:
+      - name: Check results
+        run: |
+          if [ "${{ needs.build-cache.result }}" = "success" ]; then
+            echo "All batches completed successfully"
+          else
+            echo "Some batches failed"
+            exit 1
+          fi

@@ -48,22 +48,78 @@ async def readiness_check():
 @router.get("/debug/query")
 async def debug_query():
     """Debug: test a MotherDuck query directly."""
-    from ...config import settings
-    from ...services.fia_service import fia_service
+    import traceback
+    import sys
+
+    steps = []
 
     try:
-        result = await fia_service.query_area(["GA"], "forest", None)
+        steps.append("1. Importing settings")
+        from ...config import settings
+        steps.append(f"   - motherduck_token set: {bool(settings.motherduck_token)}")
+
+        steps.append("2. Importing fia_service")
+        from ...services.fia_service import fia_service
+        steps.append("   - fia_service imported")
+
+        steps.append("3. Testing raw MotherDuck connection")
+        import duckdb
+        conn = duckdb.connect(f"md:?motherduck_token={settings.motherduck_token}")
+        result = conn.execute("SELECT 1 as test").fetchone()
+        steps.append(f"   - Basic query result: {result}")
+        conn.close()
+
+        steps.append("4. Testing MotherDuck database access")
+        conn = duckdb.connect(f"md:?motherduck_token={settings.motherduck_token}")
+        result = conn.execute("SHOW DATABASES").fetchall()
+        fia_dbs = [r[0] for r in result if r[0].startswith("fia_")]
+        steps.append(f"   - FIA databases: {fia_dbs}")
+        conn.close()
+
+        steps.append("5. Testing pyfia import")
+        from pyfia import area, FIA
+        steps.append("   - pyfia imported successfully")
+
+        steps.append("6. Testing MotherDuckFIA import")
+        from ...services.motherduck_fia import MotherDuckFIA
+        steps.append("   - MotherDuckFIA imported")
+
+        steps.append("7. Creating MotherDuckFIA connection for GA")
+        db = MotherDuckFIA(state="GA", motherduck_token=settings.motherduck_token)
+        steps.append("   - MotherDuckFIA created")
+
+        steps.append("8. Running area query")
+        result_df = area(db, land_type="forest")
+        steps.append(f"   - Query completed, type: {type(result_df)}")
+
+        steps.append("9. Converting to pandas")
+        df = result_df.to_pandas() if hasattr(result_df, "to_pandas") else result_df
+        steps.append(f"   - DataFrame shape: {df.shape}")
+        steps.append(f"   - Columns: {list(df.columns)}")
+
+        steps.append("10. Closing connection")
+        db._backend.disconnect()
+        steps.append("   - Connection closed")
+
+        # Extract result
+        est_col = "AREA" if "AREA" in df.columns else "ESTIMATE"
+        total = float(df[est_col].sum()) if est_col in df.columns else 0.0
+
         return {
             "status": "success",
-            "total_area_acres": result["total_area_acres"],
-            "se_percent": result["se_percent"],
+            "steps": steps,
+            "total_area_acres": total,
+            "columns": list(df.columns),
+            "sample": df.head(2).to_dict(),
         }
     except Exception as e:
-        import traceback
         return {
             "status": "error",
+            "steps": steps,
+            "error_type": type(e).__name__,
             "error": str(e),
             "traceback": traceback.format_exc(),
+            "python_version": sys.version,
         }
 
 
