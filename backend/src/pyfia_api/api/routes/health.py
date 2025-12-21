@@ -45,6 +45,28 @@ async def readiness_check():
     }
 
 
+@router.get("/debug/query")
+async def debug_query():
+    """Debug: test a MotherDuck query directly."""
+    from ...config import settings
+    from ...services.fia_service import fia_service
+
+    try:
+        result = await fia_service.query_area(["GA"], "forest", None)
+        return {
+            "status": "success",
+            "total_area_acres": result["total_area_acres"],
+            "se_percent": result["se_percent"],
+        }
+    except Exception as e:
+        import traceback
+        return {
+            "status": "error",
+            "error": str(e),
+            "traceback": traceback.format_exc(),
+        }
+
+
 @router.get("/debug/storage")
 async def debug_storage():
     """Debug storage configuration."""
