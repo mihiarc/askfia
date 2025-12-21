@@ -140,8 +140,6 @@ class FIAService:
         tree_domain: str | None = None,
     ) -> dict:
         """Query timber volume across states."""
-        from pyfia import volume
-
         results = []
 
         for state in states:
@@ -154,7 +152,8 @@ class FIAService:
                 if tree_domain:
                     kwargs["tree_domain"] = tree_domain
 
-                result_df = volume(db, **kwargs)
+                # Use db.volume() method which handles MotherDuck type compatibility
+                result_df = db.volume(**kwargs)
                 df = result_df.to_pandas() if hasattr(result_df, "to_pandas") else result_df
                 df["STATE"] = state
                 results.append(df)
@@ -183,8 +182,6 @@ class FIAService:
         by_species: bool = False,
     ) -> dict:
         """Query biomass and carbon stocks."""
-        from pyfia import biomass
-
         results = []
 
         for state in states:
@@ -195,7 +192,8 @@ class FIAService:
                 if by_species:
                     kwargs["grp_by"] = "SPCD"
 
-                result_df = biomass(db, **kwargs)
+                # Use db.biomass() method which handles MotherDuck type compatibility
+                result_df = db.biomass(**kwargs)
                 df = result_df.to_pandas() if hasattr(result_df, "to_pandas") else result_df
                 df["STATE"] = state
                 results.append(df)
@@ -225,8 +223,6 @@ class FIAService:
         by_species: bool = False,
     ) -> dict:
         """Query trees per acre."""
-        from pyfia import tpa
-
         results = []
 
         for state in states:
@@ -237,7 +233,8 @@ class FIAService:
                 if by_species:
                     kwargs["grp_by"] = "SPCD"
 
-                result_df = tpa(db, **kwargs)
+                # Use db.tpa() method which handles MotherDuck type compatibility
+                result_df = db.tpa(**kwargs)
                 df = result_df.to_pandas() if hasattr(result_df, "to_pandas") else result_df
                 df["STATE"] = state
                 results.append(df)
@@ -258,19 +255,11 @@ class FIAService:
         land_type: str = "forest",
     ) -> dict:
         """Compare a metric across states."""
-        from pyfia import area, volume, biomass, tpa
+        valid_metrics = ["area", "volume", "biomass", "tpa"]
 
-        metric_funcs = {
-            "area": area,
-            "volume": volume,
-            "biomass": biomass,
-            "tpa": tpa,
-        }
+        if metric not in valid_metrics:
+            raise ValueError(f"Unknown metric: {metric}. Available: {valid_metrics}")
 
-        if metric not in metric_funcs:
-            raise ValueError(f"Unknown metric: {metric}. Available: {list(metric_funcs.keys())}")
-
-        func = metric_funcs[metric]
         results = []
 
         for state in states:
@@ -282,7 +271,18 @@ class FIAService:
                     if metric in ("area", "biomass"):
                         kwargs["land_type"] = land_type
 
-                    result_df = func(db, **kwargs)
+                    # Use db methods which handle MotherDuck type compatibility
+                    if metric == "area":
+                        result_df = db.area(**kwargs)
+                    elif metric == "volume":
+                        result_df = db.volume(**kwargs)
+                    elif metric == "biomass":
+                        result_df = db.biomass(**kwargs)
+                    elif metric == "tpa":
+                        result_df = db.tpa(**kwargs)
+                    else:
+                        raise ValueError(f"Unknown metric: {metric}")
+
                     df = result_df.to_pandas() if hasattr(result_df, "to_pandas") else result_df
 
                     est_col = _get_estimate_column(df, metric)
