@@ -16,6 +16,7 @@ class Settings(BaseSettings):
 
     # API Keys
     anthropic_api_key: str
+    api_key: str | None = Field(default=None, alias="API_KEY")  # For auth
 
     # Server
     cors_origins: str = "http://localhost:3000"

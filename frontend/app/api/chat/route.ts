@@ -12,6 +12,7 @@ export async function POST(req: NextRequest) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        "X-API-Key": process.env.API_KEY || "",
       },
       body: JSON.stringify({ messages }),
     });
