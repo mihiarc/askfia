@@ -1,15 +1,89 @@
 """Service layer for pyFIA operations."""
 
 import logging
+import re
 from collections.abc import Generator
 from contextlib import contextmanager
+from functools import lru_cache
 
+import duckdb
 import pandas as pd
 
 from ..config import settings
 from .storage import storage
 
 logger = logging.getLogger(__name__)
+
+
+@lru_cache(maxsize=1)
+def _get_motherduck_databases(token: str) -> dict[str, str]:
+    """Get available FIA databases from MotherDuck.
+
+    Returns a dict mapping state codes to their latest database names.
+    Database naming convention: fia_{state}_eval{year}
+
+    Falls back to legacy naming (fia_{state}) if no eval year databases found.
+    """
+    state_to_db = {}
+
+    try:
+        conn = duckdb.connect(f"md:?motherduck_token={token}")
+        result = conn.execute("SHOW DATABASES").fetchall()
+        conn.close()
+
+        # Parse database names and find latest eval year per state
+        # Pattern: fia_{state}_eval{year} or legacy fia_{state}
+        eval_pattern = re.compile(r"^fia_([a-z]{2})_eval(\d{4})$")
+        legacy_pattern = re.compile(r"^fia_([a-z]{2})$")
+
+        state_eval_years: dict[str, list[tuple[int, str]]] = {}
+
+        for (db_name,) in result:
+            db_name = db_name.lower()
+
+            # Try new naming convention first
+            match = eval_pattern.match(db_name)
+            if match:
+                state = match.group(1).upper()
+                year = int(match.group(2))
+                if state not in state_eval_years:
+                    state_eval_years[state] = []
+                state_eval_years[state].append((year, db_name))
+                continue
+
+            # Try legacy naming
+            match = legacy_pattern.match(db_name)
+            if match:
+                state = match.group(1).upper()
+                # Use year 0 for legacy databases (lowest priority)
+                if state not in state_eval_years:
+                    state_eval_years[state] = []
+                state_eval_years[state].append((0, db_name))
+
+        # Select latest eval year for each state
+        for state, year_dbs in state_eval_years.items():
+            year_dbs.sort(reverse=True)  # Sort by year descending
+            latest_db = year_dbs[0][1]
+            state_to_db[state] = latest_db
+            if year_dbs[0][0] > 0:
+                logger.info(f"Found {state}: {latest_db} (eval {year_dbs[0][0]})")
+            else:
+                logger.info(f"Found {state}: {latest_db} (legacy naming)")
+
+    except Exception as e:
+        logger.warning(f"Could not query MotherDuck databases: {e}")
+
+    return state_to_db
+
+
+def get_motherduck_database(state: str, token: str) -> str | None:
+    """Get the MotherDuck database name for a state.
+
+    Returns the latest eval year database if available, or None if not found.
+    """
+    state = state.upper()
+    databases = _get_motherduck_databases(token)
+    return databases.get(state)
 
 
 def _get_estimate_column(df: pd.DataFrame, metric: str) -> str:
@@ -81,11 +155,23 @@ class FIAService:
         if self._motherduck_token:
             from pyfia import MotherDuckFIA
 
-            logger.info(f"Using MotherDuck for {state}")
-            database = f"fia_{state.lower()}"
-            with MotherDuckFIA(database, motherduck_token=self._motherduck_token) as db:
-                db.clip_most_recent()
-                yield db
+            # Find the database for this state (supports eval year naming)
+            database = get_motherduck_database(state, self._motherduck_token)
+
+            if database:
+                logger.info(f"Using MotherDuck for {state}: {database}")
+                with MotherDuckFIA(database, motherduck_token=self._motherduck_token) as db:
+                    db.clip_most_recent()
+                    yield db
+            else:
+                # State not found in MotherDuck, fall back to local storage
+                logger.warning(f"State {state} not found in MotherDuck, falling back to local storage")
+                from pyfia import FIA
+
+                db_path = self._get_db_path(state)
+                with FIA(db_path) as db:
+                    db.clip_most_recent()
+                    yield db
         else:
             # Fall back to local storage
             from pyfia import FIA

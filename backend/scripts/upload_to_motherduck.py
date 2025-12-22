@@ -1,7 +1,10 @@
 """Upload FIA DuckDB files to MotherDuck.
 
 This script copies tables from local DuckDB files to MotherDuck,
-creating a separate database for each state.
+creating a separate database for each state with evaluation year in the name.
+
+Database naming convention: fia_{state}_eval{year}
+Example: fia_ga_eval2023
 
 Can download from R2 first if needed.
 """
@@ -9,12 +12,41 @@ Can download from R2 first if needed.
 import os
 import sys
 from pathlib import Path
+from typing import Optional
 
 import duckdb
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
 console = Console()
+
+
+def get_eval_year(local_path: Path) -> Optional[int]:
+    """Extract the most recent evaluation year from the FIA database.
+
+    The evaluation year is extracted from the SURVEY table's INVYR field,
+    which represents the inventory year of the most recent evaluation.
+    """
+    try:
+        conn = duckdb.connect(str(local_path), read_only=True)
+
+        # Get the most recent inventory year from SURVEY table
+        # INVYR is the 4-digit inventory year
+        result = conn.execute("""
+            SELECT MAX(INVYR) as max_year
+            FROM SURVEY
+            WHERE INVYR IS NOT NULL AND INVYR > 1900
+        """).fetchone()
+
+        conn.close()
+
+        if result and result[0]:
+            return int(result[0])
+
+        return None
+    except Exception as e:
+        console.print(f"  [yellow]Warning: Could not extract eval year: {e}[/yellow]")
+        return None
 
 
 def get_tables_from_local(local_path: Path) -> list[str]:
@@ -76,16 +108,38 @@ def upload_state(
     local_path: Path,
     state: str,
     motherduck_token: str,
-) -> None:
-    """Upload a state's DuckDB file to MotherDuck."""
-    console.print(f"\n[bold blue]Uploading {state}...[/bold blue]")
+    eval_year: Optional[int] = None,
+) -> str:
+    """Upload a state's DuckDB file to MotherDuck.
+
+    Args:
+        local_path: Path to local DuckDB file
+        state: State code (e.g., 'GA')
+        motherduck_token: MotherDuck authentication token
+        eval_year: FIA evaluation year (extracted from data if not provided)
+
+    Returns:
+        The MotherDuck database name that was created
+    """
+    # Extract eval year from data if not provided
+    if eval_year is None:
+        eval_year = get_eval_year(local_path)
+
+    if eval_year:
+        md_db_name = f"fia_{state.lower()}_eval{eval_year}"
+        console.print(f"\n[bold blue]Uploading {state} (eval year {eval_year})...[/bold blue]")
+    else:
+        # Fallback to old naming if we can't determine eval year
+        md_db_name = f"fia_{state.lower()}"
+        console.print(f"\n[bold blue]Uploading {state} (unknown eval year)...[/bold blue]")
+        console.print("  [yellow]Warning: Could not determine evaluation year[/yellow]")
 
     # First, get tables from the local database
     tables = get_tables_from_local(local_path)
     console.print(f"  Found {len(tables)} tables to upload")
+    console.print(f"  Target database: [cyan]md:{md_db_name}[/cyan]")
 
     # Connect to MotherDuck default database first
-    md_db_name = f"fia_{state.lower()}"
     md_conn = duckdb.connect(f"md:?motherduck_token={motherduck_token}")
 
     # Create database if not exists
@@ -120,6 +174,7 @@ def upload_state(
     md_conn.close()
 
     console.print(f"[bold green]✓ {state} uploaded to md:{md_db_name}[/bold green]")
+    return md_db_name
 
 
 def main():
@@ -159,9 +214,12 @@ def main():
     console.print(f"[bold]Found {len(db_files)} DuckDB files to upload:[/bold]")
     for f in db_files:
         size_mb = f.stat().st_size / 1e6
-        console.print(f"  - {f.name} ({size_mb:.1f} MB)")
+        eval_year = get_eval_year(f)
+        year_str = f"eval {eval_year}" if eval_year else "unknown eval year"
+        console.print(f"  - {f.name} ({size_mb:.1f} MB, {year_str})")
 
-    # Upload each file
+    # Upload each file and track results
+    uploaded_dbs = []
     for db_file in db_files:
         # Extract state code from filename
         if db_file.stem.lower() == "fia":
@@ -170,9 +228,13 @@ def main():
         else:
             state = db_file.stem.upper()
 
-        upload_state(db_file, state, motherduck_token)
+        db_name = upload_state(db_file, state, motherduck_token)
+        uploaded_dbs.append(db_name)
 
     console.print("\n[bold green]All uploads complete![/bold green]")
+    console.print("\n[bold]Uploaded databases:[/bold]")
+    for db_name in uploaded_dbs:
+        console.print(f"  - md:{db_name}")
     console.print("\nYou can now query your data at https://app.motherduck.com")
 
 
