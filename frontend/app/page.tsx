@@ -2,6 +2,7 @@
 
 import { useChat } from "@ai-sdk/react";
 import { ChatInterface } from "@/components/chat/chat-interface";
+import { PasswordGate } from "@/components/auth/password-gate";
 
 export default function Home() {
   const {
@@ -42,18 +43,20 @@ All statistics are computed using [pyFIA](https://github.com/mihiarc/pyfia) and 
   ];
 
   return (
-    <div className="container mx-auto max-w-4xl">
-      <ChatInterface
-        messages={messages}
-        input={input}
-        onInputChange={handleInputChange}
-        onSubmit={handleSubmit}
-        isLoading={isLoading}
-        onStop={stop}
-        error={error}
-        onReload={reload}
-        suggestions={suggestions}
-      />
-    </div>
+    <PasswordGate>
+      <div className="container mx-auto max-w-4xl">
+        <ChatInterface
+          messages={messages}
+          input={input}
+          onInputChange={handleInputChange}
+          onSubmit={handleSubmit}
+          isLoading={isLoading}
+          onStop={stop}
+          error={error}
+          onReload={reload}
+          suggestions={suggestions}
+        />
+      </div>
+    </PasswordGate>
   );
 }
