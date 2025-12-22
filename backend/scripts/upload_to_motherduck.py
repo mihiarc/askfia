@@ -24,24 +24,44 @@ console = Console()
 def get_eval_year(local_path: Path) -> Optional[int]:
     """Extract the most recent evaluation year from the FIA database.
 
-    The evaluation year is extracted from the SURVEY table's INVYR field,
-    which represents the inventory year of the most recent evaluation.
+    The evaluation year is extracted from the SURVEY table's EVALID field.
+    EVALID format: {state_code}{eval_year}{eval_type}
+    - state_code: 1-2 digit state FIPS code
+    - eval_year: 2-digit year (e.g., 23 = 2023)
+    - eval_type: 2-digit evaluation type (01 = Area/Volume, 03 = Growth, etc.)
+
+    We look for eval_type 01 (EXPALL - area/volume evaluations) as the primary.
     """
     try:
         conn = duckdb.connect(str(local_path), read_only=True)
 
-        # Get the most recent inventory year from SURVEY table
-        # INVYR is the 4-digit inventory year
+        # Get the most recent EVALID ending in 01 (EXPALL evaluation type)
+        # EVALID is typically 6 digits: SSYYTT where SS=state, YY=year, TT=type
         result = conn.execute("""
-            SELECT MAX(INVYR) as max_year
+            SELECT EVALID
             FROM SURVEY
-            WHERE INVYR IS NOT NULL AND INVYR > 1900
+            WHERE EVALID IS NOT NULL
+              AND CAST(EVALID AS VARCHAR) LIKE '%01'
+            ORDER BY EVALID DESC
+            LIMIT 1
         """).fetchone()
 
         conn.close()
 
         if result and result[0]:
-            return int(result[0])
+            evalid = str(int(result[0]))
+            # Extract the 2-digit year from EVALID
+            # Format: SSYYTT or SYYTT (state can be 1 or 2 digits)
+            # The year is always positions -4 to -2 (before the 2-digit eval type)
+            if len(evalid) >= 4:
+                year_part = evalid[-4:-2]
+                year = int(year_part)
+                # Convert 2-digit year to 4-digit (assuming 2000s for now)
+                if year < 50:
+                    full_year = 2000 + year
+                else:
+                    full_year = 1900 + year
+                return full_year
 
         return None
     except Exception as e:
