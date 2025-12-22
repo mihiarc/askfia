@@ -14,7 +14,7 @@ dependencies = [
     "uvicorn[standard]>=0.32.0",
     "pydantic>=2.10.0",
     "pydantic-settings>=2.6.0",
-    "pyfia @ git+https://github.com/mihiarc/pyfia.git@fe086425abd031d9a8074066d98de58c519ee107",
+    "pyfia @ git+https://github.com/mihiarc/pyfia.git@d85cecd",
     "langchain>=0.3.0",
     "langchain-anthropic>=0.3.0",
     "langchain-core>=0.3.0",
