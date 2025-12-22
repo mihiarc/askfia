@@ -24,43 +24,46 @@ console = Console()
 def get_eval_year(local_path: Path) -> Optional[int]:
     """Extract the most recent evaluation year from the FIA database.
 
-    The evaluation year is extracted from the SURVEY table's EVALID field.
+    The evaluation year is extracted from the POP_EVAL table's EVALID field.
     EVALID format: {state_code}{eval_year}{eval_type}
     - state_code: 1-2 digit state FIPS code
     - eval_year: 2-digit year (e.g., 23 = 2023)
     - eval_type: 2-digit evaluation type (01 = Area/Volume, 03 = Growth, etc.)
 
-    We look for eval_type 01 (EXPALL - area/volume evaluations) as the primary.
+    We look for eval_type 01 (EXPALL - current area/volume evaluations).
+    Excludes legacy periodic inventory EVALIDs (year codes >= 50 which are 1900s data).
     """
     try:
         conn = duckdb.connect(str(local_path), read_only=True)
 
-        # Get the most recent EVALID ending in 01 (EXPALL evaluation type)
-        # EVALID is typically 6 digits: SSYYTT where SS=state, YY=year, TT=type
+        # Get all EVALIDs ending in 01 (current area/volume evaluation)
+        # from the POP_EVAL table
         result = conn.execute("""
-            SELECT EVALID
-            FROM SURVEY
+            SELECT EVALID, EVAL_DESCR
+            FROM POP_EVAL
             WHERE EVALID IS NOT NULL
               AND CAST(EVALID AS VARCHAR) LIKE '%01'
             ORDER BY EVALID DESC
-            LIMIT 1
-        """).fetchone()
+        """).fetchall()
 
         conn.close()
 
-        if result and result[0]:
-            evalid = str(int(result[0]))
-            # Extract the 2-digit year from EVALID
-            # Format: SSYYTT or SYYTT (state can be 1 or 2 digits)
-            # The year is always positions -4 to -2 (before the 2-digit eval type)
+        # Find the most recent modern evaluation (year code 00-49 = 2000-2049)
+        # Skip legacy periodic inventories (year code 50-99 = 1950-1999)
+        for evalid_val, eval_descr in result:
+            evalid = str(int(evalid_val))
+
             if len(evalid) >= 4:
                 year_part = evalid[-4:-2]
                 year = int(year_part)
-                # Convert 2-digit year to 4-digit (assuming 2000s for now)
-                if year < 50:
-                    full_year = 2000 + year
-                else:
-                    full_year = 1900 + year
+
+                # Skip legacy periodic inventories (1950s-1990s)
+                if year >= 50:
+                    continue
+
+                # This is a modern annual inventory (2000+)
+                full_year = 2000 + year
+                console.print(f"  [dim]EVALID {evalid}: {eval_descr}[/dim]")
                 return full_year
 
         return None
