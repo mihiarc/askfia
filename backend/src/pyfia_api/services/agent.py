@@ -351,7 +351,9 @@ class FIAAgent:
         user_id: str | None = None,
         session_id: str | None = None,
     ) -> AsyncGenerator[dict, None]:
-        """Stream a response with tool use."""
+        """Stream a response with tool use, supporting multi-turn tool calling."""
+        from langchain_core.messages import ToolMessage
+
         start_time = time.time()
         total_input_tokens = 0
         total_output_tokens = 0
@@ -367,18 +369,45 @@ class FIAAgent:
             elif msg["role"] == "assistant":
                 lc_messages.append(AIMessage(content=msg["content"]))
 
-        # Get response (may include tool calls)
-        response = await self.llm_with_tools.ainvoke(lc_messages)
+        # Tool execution loop - supports multiple rounds of tool calls
+        max_iterations = 5  # Prevent infinite loops
+        iteration = 0
 
-        # Track token usage from first response
-        if hasattr(response, "usage_metadata") and response.usage_metadata:
-            total_input_tokens += response.usage_metadata.get("input_tokens", 0)
-            total_output_tokens += response.usage_metadata.get("output_tokens", 0)
+        while iteration < max_iterations:
+            iteration += 1
 
-        # Check for tool calls
-        if response.tool_calls:
-            tool_calls_count = len(response.tool_calls)
-            tool_results = {}  # Store results to avoid re-execution
+            # Get response (may include tool calls)
+            response = await self.llm_with_tools.ainvoke(lc_messages)
+
+            # Track token usage
+            if hasattr(response, "usage_metadata") and response.usage_metadata:
+                total_input_tokens += response.usage_metadata.get("input_tokens", 0)
+                total_output_tokens += response.usage_metadata.get("output_tokens", 0)
+
+            # Check for tool calls
+            if not response.tool_calls:
+                # No tool calls - we have the final response
+                if query_type is None:
+                    query_type = "direct_response"
+
+                # Stream the text response
+                content = response.content
+                if isinstance(content, str):
+                    yield {"type": "text", "content": content}
+                elif isinstance(content, list):
+                    # Handle list of content blocks
+                    for block in content:
+                        if isinstance(block, str):
+                            yield {"type": "text", "content": block}
+                        elif hasattr(block, "text"):
+                            yield {"type": "text", "content": block.text}
+                        elif isinstance(block, dict) and "text" in block:
+                            yield {"type": "text", "content": block["text"]}
+                break
+
+            # Process tool calls
+            tool_calls_count += len(response.tool_calls)
+            tool_results = {}
 
             for tool_call in response.tool_calls:
                 # Track query type from first tool call
@@ -397,7 +426,7 @@ class FIAAgent:
                 if tool_func:
                     try:
                         result = await tool_func.ainvoke(tool_call["args"])
-                        tool_results[tool_call["id"]] = result  # Cache result
+                        tool_results[tool_call["id"]] = result
                         yield {
                             "type": "tool_result",
                             "tool_call_id": tool_call["id"],
@@ -413,13 +442,9 @@ class FIAAgent:
                             "result": error_result,
                         }
 
-            # Get final response after tool execution
-            # Add tool results to messages and get completion
-            from langchain_core.messages import ToolMessage
-
+            # Add assistant response and tool results to messages for next iteration
             lc_messages.append(response)
             for tool_call in response.tool_calls:
-                # Reuse cached result instead of re-executing
                 result = tool_results.get(tool_call["id"], "Tool execution failed")
                 lc_messages.append(
                     ToolMessage(
@@ -427,21 +452,6 @@ class FIAAgent:
                         tool_call_id=tool_call["id"],
                     )
                 )
-
-            final_response = await self.llm.ainvoke(lc_messages)
-
-            # Track token usage from final response
-            if hasattr(final_response, "usage_metadata") and final_response.usage_metadata:
-                total_input_tokens += final_response.usage_metadata.get("input_tokens", 0)
-                total_output_tokens += final_response.usage_metadata.get("output_tokens", 0)
-
-            # Stream the text response
-            for chunk in final_response.content:
-                yield {"type": "text", "content": chunk}
-        else:
-            # No tool calls, just stream the text
-            query_type = "direct_response"
-            yield {"type": "text", "content": response.content}
 
         # Calculate latency
         latency_ms = int((time.time() - start_time) * 1000)
