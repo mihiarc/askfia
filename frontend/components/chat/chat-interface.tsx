@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 interface ChatInterfaceProps {
   messages: Message[];
@@ -227,7 +228,7 @@ function MessageBubble({ message }: { message: Message }) {
               isUser ? "prose-invert" : ""
             )}
           >
-            <ReactMarkdown>{message.content}</ReactMarkdown>
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
           </div>
         )}
       </Card>
