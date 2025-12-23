@@ -89,11 +89,12 @@ def get_motherduck_database(state: str, token: str) -> str | None:
 def _get_estimate_column(df: pd.DataFrame, metric: str) -> str:
     """Find the estimate column name dynamically."""
     # Try metric-specific columns first (e.g., AREA, VOLUME, BIOMASS)
+    # Column names should match pyFIA output
     metric_cols = {
-        "area": ["AREA", "area", "ESTIMATE", "estimate"],
-        "volume": ["VOLUME", "volume", "VOLCFNET", "ESTIMATE", "estimate"],
-        "biomass": ["BIOMASS", "biomass", "DRYBIO_AG", "ESTIMATE", "estimate"],
-        "tpa": ["TPA", "tpa", "ESTIMATE", "estimate"],
+        "area": ["AREA", "AREA_TOTAL", "area", "ESTIMATE", "estimate"],
+        "volume": ["VOL_TOTAL", "VOLUME", "volume", "VOLCFNET", "ESTIMATE", "estimate"],
+        "biomass": ["BIO_TOTAL", "BIO_ACRE", "BIOMASS", "biomass", "DRYBIO_AG", "ESTIMATE", "estimate"],
+        "tpa": ["TPA", "TPA_TOTAL", "tpa", "ESTIMATE", "estimate"],
         "mortality": ["MORTALITY", "mortality", "ESTIMATE", "estimate"],
         "growth": ["GROWTH", "growth", "ESTIMATE", "estimate"],
     }
@@ -113,6 +114,22 @@ def _get_estimate_column(df: pd.DataFrame, metric: str) -> str:
 
 def _get_se_percent_column(df: pd.DataFrame, metric: str) -> str | None:
     """Find the SE percent column name dynamically."""
+    # Try metric-specific SE columns first (matching pyFIA output)
+    metric_se_cols = {
+        "area": ["AREA_SE_PERCENT", "AREA_SE", "SE_PERCENT"],
+        "volume": ["VOL_TOTAL_SE", "VOLUME_SE_PERCENT", "VOLUME_SE", "SE_PERCENT"],
+        "biomass": ["BIO_TOTAL_SE", "BIO_ACRE_SE", "BIOMASS_SE_PERCENT", "BIOMASS_SE", "SE_PERCENT"],
+        "tpa": ["TPA_SE", "TPA_SE_PERCENT", "SE_PERCENT"],
+        "mortality": ["MORTALITY_SE", "SE_PERCENT"],
+        "growth": ["GROWTH_SE", "SE_PERCENT"],
+    }
+
+    # Try metric-specific columns first
+    if metric in metric_se_cols:
+        for col in metric_se_cols[metric]:
+            if col in df.columns:
+                return col
+
     # Try common patterns
     candidates = [
         f"{metric.upper()}_SE_PERCENT",
@@ -274,7 +291,7 @@ class FIAService:
             state = state.upper()
 
             with self._get_fia_connection(state) as db:
-                kwargs = {"land_type": land_type}
+                kwargs = {"land_type": land_type, "variance": True}
                 if by_species:
                     kwargs["grp_by"] = "SPCD"
 
@@ -286,17 +303,24 @@ class FIAService:
 
         combined = pd.concat(results, ignore_index=True)
 
-        est_col = _get_estimate_column(combined, "biomass")
-        se_col = _get_se_percent_column(combined, "biomass")
+        # pyFIA returns BIO_TOTAL and CARB_TOTAL columns directly
+        total_biomass = float(combined["BIO_TOTAL"].sum()) if "BIO_TOTAL" in combined.columns else 0.0
+        total_carbon = float(combined["CARB_TOTAL"].sum()) if "CARB_TOTAL" in combined.columns else total_biomass * 0.47
 
-        total_biomass = float(combined[est_col].sum())
-        se_pct = float(combined[se_col].mean()) if se_col else 0.0
+        # Get SE if available (pyFIA returns BIO_TOTAL_SE)
+        se_col = _get_se_percent_column(combined, "biomass")
+        if se_col and se_col in combined.columns:
+            # Calculate SE as percentage of total
+            total_se = float(combined[se_col].sum()) if se_col else 0.0
+            se_pct = (total_se / total_biomass * 100) if total_biomass > 0 else 0.0
+        else:
+            se_pct = 0.0
 
         return {
             "states": states,
             "land_type": land_type,
             "total_biomass_tons": total_biomass,
-            "carbon_mmt": total_biomass * 0.5 / 1e6,  # Standard conversion
+            "carbon_mmt": total_carbon / 1e6,  # Convert to million metric tons
             "se_percent": se_pct,
             "by_species": combined.to_dict("records") if by_species else None,
             "source": "USDA Forest Service FIA (pyFIA validated)",
