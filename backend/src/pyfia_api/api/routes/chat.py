@@ -4,10 +4,10 @@ import json
 import logging
 from typing import AsyncGenerator
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 
-from ...auth import verify_api_key
+from ...auth import require_auth
 from ...models.schemas import ChatRequest
 from ...services.agent import fia_agent
 
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.post("/stream", dependencies=[Depends(verify_api_key)])
+@router.post("/stream", dependencies=[require_auth])
 async def chat_stream(request: ChatRequest):
     """
     Stream chat responses using Vercel AI SDK Data Stream Protocol.
@@ -66,7 +66,7 @@ async def chat_stream(request: ChatRequest):
     )
 
 
-@router.post("/", dependencies=[Depends(verify_api_key)])
+@router.post("/", dependencies=[require_auth])
 async def chat(request: ChatRequest):
     """Non-streaming chat endpoint (for testing)."""
     messages = [{"role": m.role, "content": m.content} for m in request.messages]

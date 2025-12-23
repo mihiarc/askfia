@@ -1,8 +1,8 @@
 """Direct query endpoints for FIA data."""
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 
-from ...auth import verify_api_key
+from ...auth import require_auth
 from ...models.schemas import (
     AreaQuery,
     AreaResponse,
@@ -17,7 +17,7 @@ from ...models.schemas import (
 from ...services.fia_service import fia_service
 
 # All query endpoints require authentication
-router = APIRouter(dependencies=[Depends(verify_api_key)])
+router = APIRouter(dependencies=[require_auth])
 
 
 @router.post("/area", response_model=AreaResponse)

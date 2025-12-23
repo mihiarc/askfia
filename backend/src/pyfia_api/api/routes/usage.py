@@ -5,9 +5,11 @@ from typing import Optional
 
 from fastapi import APIRouter, Query
 
+from ...auth import require_auth
 from ...services.usage_tracker import usage_tracker
 
-router = APIRouter(prefix="/usage", tags=["usage"])
+# All usage endpoints require authentication
+router = APIRouter(prefix="/usage", tags=["usage"], dependencies=[require_auth])
 
 
 @router.get("/today")

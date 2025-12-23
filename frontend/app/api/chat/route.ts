@@ -8,11 +8,14 @@ export async function POST(req: NextRequest) {
   const backendUrl = process.env.BACKEND_URL || "http://localhost:8000";
 
   try {
+    // Forward cookies from the client to the backend for authentication
+    const cookies = req.headers.get("cookie") || "";
+
     const response = await fetch(`${backendUrl}/api/v1/chat/stream`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-API-Key": process.env.API_KEY || "",
+        Cookie: cookies,
       },
       body: JSON.stringify({ messages }),
     });

@@ -1,37 +1,48 @@
-"""Authentication for pyFIA API."""
+"""Authentication dependency for pyFIA API.
 
-from fastapi import Depends, HTTPException, Security, status
-from fastapi.security import APIKeyHeader
+Uses JWT tokens stored in HTTP-only cookies for authentication.
+"""
 
-from .config import settings
+from fastapi import Cookie, Depends, HTTPException, status
 
-api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+from .config import get_settings
 
 
-async def verify_api_key(api_key: str | None = Security(api_key_header)) -> str:
-    """Verify API key if authentication is enabled.
+async def verify_auth(
+    access_token: str | None = Cookie(default=None),
+) -> None:
+    """Verify authentication via JWT cookie.
 
-    If API_KEY is not set in environment, authentication is disabled.
+    If AUTH_PASSWORD_HASH and AUTH_JWT_SECRET are not set in environment,
+    authentication is disabled and all requests are allowed.
+
+    Args:
+        access_token: JWT access token from cookie
+
+    Raises:
+        HTTPException: 401 if not authenticated
     """
-    # If no API key configured, allow all requests (dev mode)
-    if not settings.api_key:
-        return "no-auth"
+    # Import here to avoid circular imports
+    from .api.routes.auth import verify_token
 
-    # API key is required
-    if not api_key:
+    settings = get_settings()
+
+    # Skip auth check if authentication is disabled
+    if not settings.auth_enabled:
+        return
+
+    if not access_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing API key. Include X-API-Key header.",
+            detail="Not authenticated",
         )
 
-    if api_key != settings.api_key:
+    if not verify_token(access_token, "access"):
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Invalid API key.",
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
         )
-
-    return api_key
 
 
 # Dependency for protected routes
-require_auth = Depends(verify_api_key)
+require_auth = Depends(verify_auth)

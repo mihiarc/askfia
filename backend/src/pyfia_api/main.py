@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
-from .api.routes import chat, query, downloads, health, usage
+from .api.routes import auth, chat, query, downloads, health, usage
 
 # Configure logging
 logging.basicConfig(
@@ -56,6 +56,7 @@ app.add_middleware(
 
 # Include routers
 app.include_router(health.router, tags=["Health"])
+app.include_router(auth.router, prefix="/api/v1", tags=["Authentication"])
 app.include_router(chat.router, prefix="/api/v1/chat", tags=["Chat"])
 app.include_router(query.router, prefix="/api/v1/query", tags=["Query"])
 app.include_router(downloads.router, prefix="/api/v1/downloads", tags=["Downloads"])

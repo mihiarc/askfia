@@ -16,7 +16,31 @@ class Settings(BaseSettings):
 
     # API Keys
     anthropic_api_key: str
-    api_key: str | None = Field(default=None, alias="API_KEY")  # For auth
+
+    # Authentication (JWT cookie-based)
+    auth_password_hash: str | None = Field(
+        default=None,
+        alias="AUTH_PASSWORD_HASH",
+        description="bcrypt hash of the shared password",
+    )
+    auth_jwt_secret: str | None = Field(
+        default=None,
+        alias="AUTH_JWT_SECRET",
+        description="Secret key for JWT signing",
+    )
+    auth_access_token_expire: int = Field(
+        default=1800,  # 30 minutes
+        alias="AUTH_ACCESS_TOKEN_EXPIRE",
+    )
+    auth_refresh_token_expire: int = Field(
+        default=604800,  # 7 days
+        alias="AUTH_REFRESH_TOKEN_EXPIRE",
+    )
+
+    @property
+    def auth_enabled(self) -> bool:
+        """Check if authentication is enabled."""
+        return bool(self.auth_password_hash and self.auth_jwt_secret)
 
     # Server
     cors_origins: str = "http://localhost:3000"

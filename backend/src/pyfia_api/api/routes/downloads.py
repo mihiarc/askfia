@@ -8,12 +8,14 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 
+from ...auth import require_auth
 from ...models.schemas import DownloadRequest, DownloadResponse
 from ...config import settings
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter()
+# All download endpoints require authentication
+router = APIRouter(dependencies=[require_auth])
 
 # In-memory download registry (use Redis in production)
 _downloads: dict[str, dict] = {}
