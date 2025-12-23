@@ -392,17 +392,25 @@ class FIAAgent:
 
                 # Stream the text response
                 content = response.content
+                logger.info(f"Response content type: {type(content)}")
                 if isinstance(content, str):
+                    logger.info(f"Content (first 200 chars): {content[:200]!r}")
                     yield {"type": "text", "content": content}
                 elif isinstance(content, list):
-                    # Handle list of content blocks
+                    # Handle list of content blocks - join them to preserve structure
+                    logger.info(f"Content is list with {len(content)} blocks")
+                    text_parts = []
                     for block in content:
                         if isinstance(block, str):
-                            yield {"type": "text", "content": block}
+                            text_parts.append(block)
                         elif hasattr(block, "text"):
-                            yield {"type": "text", "content": block.text}
+                            text_parts.append(block.text)
                         elif isinstance(block, dict) and "text" in block:
-                            yield {"type": "text", "content": block["text"]}
+                            text_parts.append(block["text"])
+                    # Join all text parts and yield as single response
+                    full_text = "".join(text_parts)
+                    logger.info(f"Joined content (first 200 chars): {full_text[:200]!r}")
+                    yield {"type": "text", "content": full_text}
                 break
 
             # Process tool calls
