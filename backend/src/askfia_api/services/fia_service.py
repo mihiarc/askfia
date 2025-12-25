@@ -338,12 +338,21 @@ class FIAService:
         else:
             se_pct = 0.0
 
+        # Standardize column names for by_species output
+        by_species_data = None
+        if by_species:
+            species_df = combined.copy()
+            # Rename estimate column to ESTIMATE for consistent agent access
+            if est_col != "ESTIMATE":
+                species_df = species_df.rename(columns={est_col: "ESTIMATE"})
+            by_species_data = species_df.to_dict("records")
+
         return {
             "states": states,
             "total_volume_cuft": total_vol,
             "total_volume_billion_cuft": total_vol / 1e9,
             "se_percent": se_pct,
-            "by_species": combined.to_dict("records") if by_species else None,
+            "by_species": by_species_data,
             "source": "USDA Forest Service FIA (pyFIA validated)",
         }
 
@@ -397,13 +406,22 @@ class FIAService:
         else:
             se_pct = 0.0
 
+        # Standardize column names for by_species output
+        by_species_data = None
+        if by_species:
+            species_df = combined.copy()
+            # Rename estimate column to ESTIMATE for consistent agent access
+            if "BIO_TOTAL" in species_df.columns:
+                species_df = species_df.rename(columns={"BIO_TOTAL": "ESTIMATE"})
+            by_species_data = species_df.to_dict("records")
+
         return {
             "states": states,
             "land_type": land_type,
             "total_biomass_tons": total_biomass,
             "carbon_mmt": total_carbon / 1e6,  # Convert to million metric tons
             "se_percent": se_pct,
-            "by_species": combined.to_dict("records") if by_species else None,
+            "by_species": by_species_data,
             "source": "USDA Forest Service FIA (pyFIA validated)",
         }
 
@@ -458,6 +476,20 @@ class FIAService:
         else:
             se_pct = 0.0
 
+        # Standardize column names for by_species/by_size_class output
+        by_species_data = None
+        by_size_class_data = None
+        if by_species or by_size_class:
+            grouped_df = combined.copy()
+            # Rename estimate column to ESTIMATE for consistent agent access
+            if est_col != "ESTIMATE":
+                grouped_df = grouped_df.rename(columns={est_col: "ESTIMATE"})
+            records = grouped_df.to_dict("records")
+            if by_species:
+                by_species_data = records
+            if by_size_class:
+                by_size_class_data = records
+
         return {
             "states": states,
             "land_type": land_type,
@@ -465,8 +497,8 @@ class FIAService:
             "tree_domain": tree_domain,
             "total_tpa": total_tpa,
             "se_percent": se_pct,
-            "by_species": combined.to_dict("records") if by_species else None,
-            "by_size_class": combined.to_dict("records") if by_size_class else None,
+            "by_species": by_species_data,
+            "by_size_class": by_size_class_data,
             "source": "USDA Forest Service FIA (pyFIA validated)",
         }
 

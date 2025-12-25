@@ -139,10 +139,12 @@ async def query_timber_volume(
     if result.get("by_species"):
         response += "\nTop species:\n"
         sorted_species = sorted(
-            result["by_species"], key=lambda x: x.get("ESTIMATE", 0), reverse=True
+            result["by_species"], key=lambda x: x.get("ESTIMATE", x.get("estimate", 0)), reverse=True
         )
         for row in sorted_species[:10]:
-            response += f"- SPCD {row.get('SPCD', '?')}: {row['ESTIMATE']:,.0f} cu ft\n"
+            estimate = row.get("ESTIMATE", row.get("estimate", 0))
+            spcd = row.get("SPCD", row.get("spcd", "?"))
+            response += f"- SPCD {spcd}: {estimate:,.0f} cu ft\n"
 
     return response
 
