@@ -46,12 +46,20 @@ export function ChatInterface({
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  // Auto-scroll to bottom on new messages
+  // Get the last message content for scroll trigger during streaming
+  const lastMessage = messages[messages.length - 1];
+  const lastMessageContent = lastMessage?.content || "";
+
+  // Auto-scroll to bottom on new messages and during streaming
   useEffect(() => {
     if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      // Find the actual scrollable viewport inside ScrollArea
+      const viewport = scrollRef.current.querySelector('[data-radix-scroll-area-viewport]');
+      if (viewport) {
+        viewport.scrollTop = viewport.scrollHeight;
+      }
     }
-  }, [messages]);
+  }, [messages, lastMessageContent, isLoading]);
 
   // Focus input on load
   useEffect(() => {
