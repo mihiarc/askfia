@@ -1013,32 +1013,16 @@ class FIAService:
 
         combined = pd.concat(results, ignore_index=True)
 
-        # Try to get forest type names from the database reference table
-        # Fall back to hardcoded dictionary if REF_FOREST_TYPE is not available (e.g., MotherDuck)
-        try:
-            with self._get_fia_connection(states[0]) as db:
-                import polars as pl
-                from pyfia.utils.reference_tables import join_forest_type_names
+        # Always use hardcoded forest type names for consistency
+        # The REF_FOREST_TYPE table is often missing from MotherDuck databases
+        # and our hardcoded dictionary is based on official FIA documentation
+        from .forest_types import get_forest_type_name
 
-                # Convert to polars for reference table join
-                combined_pl = pl.from_pandas(combined)
-                combined_pl = join_forest_type_names(combined_pl, db)
-                combined = combined_pl.to_pandas()
-                logger.info(
-                    "Successfully joined forest type names from REF_FOREST_TYPE"
-                )
-        except Exception as e:
-            # REF_FOREST_TYPE table not available (common in MotherDuck)
-            # Use hardcoded forest type names as fallback
-            logger.info(
-                f"REF_FOREST_TYPE table not available ({e}), using hardcoded forest type names"
-            )
-            from .forest_types import get_forest_type_name
-
-            # Add forest type names using our hardcoded dictionary
-            combined["FOREST_TYPE_NAME"] = combined["FORTYPCD"].apply(
-                lambda x: get_forest_type_name(int(x)) if pd.notna(x) else "Unknown"
-            )
+        # Add forest type names using our hardcoded dictionary
+        combined["FOREST_TYPE_NAME"] = combined["FORTYPCD"].apply(
+            lambda x: get_forest_type_name(int(x)) if pd.notna(x) else "Unknown"
+        )
+        logger.info("Using hardcoded forest type names from FIA documentation")
 
         # Get estimate and SE columns
         est_col = _get_estimate_column(combined, metric)
