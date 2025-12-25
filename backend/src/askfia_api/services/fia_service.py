@@ -93,7 +93,7 @@ def _get_estimate_column(df: pd.DataFrame, metric: str) -> str:
     # Column names should match pyFIA output
     metric_cols = {
         "area": ["AREA", "AREA_TOTAL", "area", "ESTIMATE", "estimate"],
-        "volume": ["VOL_TOTAL", "VOLUME", "volume", "VOLCFNET", "ESTIMATE", "estimate"],
+        "volume": ["VOLCFNET_TOTAL", "VOL_TOTAL", "VOLUME", "volume", "VOLCFNET", "ESTIMATE", "estimate"],
         "biomass": [
             "BIO_TOTAL",
             "BIO_ACRE",
