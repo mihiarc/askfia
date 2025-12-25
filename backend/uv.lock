@@ -1399,8 +1399,8 @@ wheels = [
 
 [[package]]
 name = "pyfia"
-version = "1.0.0b1"
-source = { git = "https://github.com/mihiarc/pyfia.git?rev=d85cecd#d85cecddb4e30d54345d9225160d75c6eeb19f64" }
+version = "1.1.0b1"
+source = { git = "https://github.com/mihiarc/pyfia.git?rev=ae0a3659300770674b01afff5a191bc321cdf0e8#ae0a3659300770674b01afff5a191bc321cdf0e8" }
 dependencies = [
     { name = "connectorx" },
     { name = "duckdb" },
@@ -1460,7 +1460,7 @@ requires-dist = [
     { name = "polars", specifier = ">=1.0.0" },
     { name = "pydantic", specifier = ">=2.10.0" },
     { name = "pydantic-settings", specifier = ">=2.6.0" },
-    { name = "pyfia", git = "https://github.com/mihiarc/pyfia.git?rev=d85cecd" },
+    { name = "pyfia", git = "https://github.com/mihiarc/pyfia.git?rev=ae0a3659300770674b01afff5a191bc321cdf0e8" },
     { name = "pyjwt", specifier = ">=2.10.1" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24.0" },
