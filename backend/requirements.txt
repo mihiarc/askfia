@@ -12,3 +12,4 @@ httpx>=0.28.0
 polars>=1.0.0
 boto3>=1.42.14
 aiofiles>=25.1.0
+# Force rebuild Thu Dec 25 10:50:05 EST 2025
