@@ -506,10 +506,10 @@ async def query_tpa(
     if result.get("by_species"):
         response += "\nTop species by TPA:\n"
         sorted_species = sorted(
-            result["by_species"], key=lambda x: x.get("TPA", 0), reverse=True
+            result["by_species"], key=lambda x: x.get("ESTIMATE", x.get("TPA", 0)), reverse=True
         )
         for row in sorted_species[:10]:
-            tpa = row.get("TPA", 0)
+            tpa = row.get("ESTIMATE", row.get("TPA", 0))
             baa = row.get("BAA", 0)
             spcd = row.get("SPCD", "?")
             response += f"- SPCD {spcd}: {tpa:.1f} trees/acre, {baa:.1f} sq ft/acre\n"
@@ -521,7 +521,7 @@ async def query_tpa(
         )
         for row in sorted_sizes[:15]:
             size_class = row.get("SIZE_CLASS", 0)
-            tpa = row.get("TPA", 0)
+            tpa = row.get("ESTIMATE", row.get("TPA", 0))
             baa = row.get("BAA", 0)
             response += f'- {size_class}-{size_class + 2}" DBH: {tpa:.1f} trees/acre, {baa:.1f} sq ft/acre\n'
 
