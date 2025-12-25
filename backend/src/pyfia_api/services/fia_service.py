@@ -11,6 +11,7 @@ import pandas as pd
 
 from ..config import settings
 from .storage import storage
+from . import species_data
 
 logger = logging.getLogger(__name__)
 
@@ -560,69 +561,26 @@ class FIAService:
     ) -> dict:
         """Query timber removals (harvest) across states."""
         results = []
-        missing_grm_states = []
 
         for state in states:
             state = state.upper()
 
             with self._get_fia_connection(state) as db:
-                # Check if required GRM tables exist
-                required_tables = ["TREE_GRM_COMPONENT", "TREE_GRM_MIDPT"]
-
-                missing_tables = []
-                for table in required_tables:
-                    if hasattr(db._reader._backend, "table_exists"):
-                        if not db._reader._backend.table_exists(table):
-                            missing_tables.append(table)
-                    else:
-                        try:
-                            if table not in db.tables:
-                                db.load_table(table)
-                        except Exception:
-                            missing_tables.append(table)
-
-                if missing_tables:
-                    logger.warning(
-                        f"State {state} is missing GRM tables: {missing_tables}. "
-                        "Removals data not available."
-                    )
-                    missing_grm_states.append(state)
-                    continue
-
                 kwargs = {"measure": "volume", "variance": True}
                 if by_species:
                     kwargs["grp_by"] = "SPCD"
                 if tree_domain:
                     kwargs["tree_domain"] = tree_domain
 
-                try:
-                    # Use db.removals() method which handles MotherDuck type compatibility
-                    result_df = db.removals(**kwargs)
-                    df = (
-                        result_df.to_pandas()
-                        if hasattr(result_df, "to_pandas")
-                        else result_df
-                    )
-                    df["STATE"] = state
-                    results.append(df)
-                except Exception as e:
-                    logger.error(f"Error querying removals for {state}: {e}")
-                    missing_grm_states.append(state)
-                    continue
-
-        # If no states had GRM data, return error response
-        if not results:
-            return {
-                "error": (
-                    f"Removals data is not available for the requested state(s): {states}. "
-                    "Removals estimation requires GRM tables (TREE_GRM_COMPONENT, TREE_GRM_MIDPT) "
-                    "which are not available in all FIA databases."
-                ),
-                "states": states,
-                "missing_grm_states": missing_grm_states,
-                "available_metrics": ["area", "volume", "biomass", "tpa"],
-                "source": "USDA Forest Service FIA (pyFIA)",
-            }
+                # Use db.removals() method which handles MotherDuck type compatibility
+                result_df = db.removals(**kwargs)
+                df = (
+                    result_df.to_pandas()
+                    if hasattr(result_df, "to_pandas")
+                    else result_df
+                )
+                df["STATE"] = state
+                results.append(df)
 
         combined = pd.concat(results, ignore_index=True)
 
@@ -645,7 +603,7 @@ class FIAService:
         else:
             se_pct = 0.0
 
-        result = {
+        return {
             "states": states,
             "total_removals_cuft": total_removals,
             "total_removals_million_cuft": total_removals / 1e6,
@@ -653,18 +611,6 @@ class FIAService:
             "by_species": combined.to_dict("records") if by_species else None,
             "source": "USDA Forest Service FIA (pyFIA validated)",
         }
-
-        # Add warning if some states were missing GRM data
-        if missing_grm_states:
-            result["warning"] = (
-                f"Removals data not available for: {', '.join(missing_grm_states)}. "
-                "Results only include states with GRM tables."
-            )
-            result["states_with_data"] = [
-                s for s in states if s not in missing_grm_states
-            ]
-
-        return result
 
     async def query_growth(
         self,
@@ -832,33 +778,11 @@ class FIAService:
     ) -> dict:
         """Query forest area change across states."""
         results = []
-        missing_table_states = []
 
         for state in states:
             state = state.upper()
 
             with self._get_fia_connection(state) as db:
-                # Check if required table exists
-                required_table = "SUBP_COND_CHNG_MTRX"
-                table_exists = False
-                if hasattr(db._reader._backend, "table_exists"):
-                    table_exists = db._reader._backend.table_exists(required_table)
-                else:
-                    try:
-                        if required_table not in db.tables:
-                            db.load_table(required_table)
-                        table_exists = True
-                    except Exception:
-                        table_exists = False
-
-                if not table_exists:
-                    logger.warning(
-                        f"State {state} is missing SUBP_COND_CHNG_MTRX table. "
-                        "Area change data not available."
-                    )
-                    missing_table_states.append(state)
-                    continue
-
                 kwargs = {
                     "land_type": land_type,
                     "change_type": change_type,
@@ -868,36 +792,15 @@ class FIAService:
                 if grp_by:
                     kwargs["grp_by"] = grp_by
 
-                try:
-                    # Use db.area_change() method which handles MotherDuck type compatibility
-                    result_df = db.area_change(**kwargs)
-                    df = (
-                        result_df.to_pandas()
-                        if hasattr(result_df, "to_pandas")
-                        else result_df
-                    )
-                    df["STATE"] = state
-                    results.append(df)
-                except Exception as e:
-                    logger.error(f"Error querying area change for {state}: {e}")
-                    missing_table_states.append(state)
-                    continue
-
-        # If no states had area change data, return error response
-        if not results:
-            return {
-                "error": (
-                    f"Area change data is not available for the requested state(s): {states}. "
-                    "Area change estimation requires the SUBP_COND_CHNG_MTRX table "
-                    "which tracks subplot-level condition changes between measurement periods. "
-                    "This table may not be available in all FIA databases, especially newer inventories "
-                    "or MotherDuck databases."
-                ),
-                "states": states,
-                "states_missing_data": missing_table_states,
-                "available_metrics": ["area", "volume", "biomass", "tpa"],
-                "source": "USDA Forest Service FIA (pyFIA)",
-            }
+                # Use db.area_change() method which handles MotherDuck type compatibility
+                result_df = db.area_change(**kwargs)
+                df = (
+                    result_df.to_pandas()
+                    if hasattr(result_df, "to_pandas")
+                    else result_df
+                )
+                df["STATE"] = state
+                results.append(df)
 
         combined = pd.concat(results, ignore_index=True)
 
@@ -920,7 +823,7 @@ class FIAService:
         else:
             se_pct = 0.0
 
-        result = {
+        return {
             "states": states,
             "land_type": land_type,
             "change_type": change_type,
@@ -929,18 +832,6 @@ class FIAService:
             "breakdown": combined.to_dict("records") if grp_by else None,
             "source": "USDA Forest Service FIA (pyFIA validated)",
         }
-
-        # Add warning if some states were missing area change data
-        if missing_table_states:
-            result["warning"] = (
-                f"Area change data not available for: {', '.join(missing_table_states)}. "
-                "Results only include states with SUBP_COND_CHNG_MTRX table."
-            )
-            result["states_with_data"] = [
-                s for s in states if s not in missing_table_states
-            ]
-
-        return result
 
     async def query_by_stand_size(
         self,
@@ -1453,6 +1344,61 @@ class FIAService:
                     "state": state,
                     "county_fips": county_fips,
                     "metric": metric,
+                    "land_type": land_type,
+                    "total_area_acres": total_area,
+                    "se_percent": se_pct,
+                    "source": "USDA Forest Service FIA (pyFIA validated)",
+                }
+            elif metric == "volume":
+                total_vol = float(df[est_col].sum())
+                se_pct = float(df[se_col].mean()) if se_col else 0.0
+                return {
+                    "state": state,
+                    "county_fips": county_fips,
+                    "metric": metric,
+                    "total_volume_cuft": total_vol,
+                    "total_volume_billion_cuft": total_vol / 1e9,
+                    "se_percent": se_pct,
+                    "by_species": df.to_dict("records") if by_species else None,
+                    "source": "USDA Forest Service FIA (pyFIA validated)",
+                }
+            elif metric == "biomass":
+                total_biomass = (
+                    float(df["BIO_TOTAL"].sum()) if "BIO_TOTAL" in df.columns else 0.0
+                )
+                total_carbon = (
+                    float(df["CARB_TOTAL"].sum())
+                    if "CARB_TOTAL" in df.columns
+                    else total_biomass * 0.47
+                )
+                se_pct = float(df[se_col].mean()) if se_col else 0.0
+                return {
+                    "state": state,
+                    "county_fips": county_fips,
+                    "metric": metric,
+                    "land_type": land_type,
+                    "total_biomass_tons": total_biomass,
+                    "carbon_mmt": total_carbon / 1e6,
+                    "se_percent": se_pct,
+                    "by_species": df.to_dict("records") if by_species else None,
+                    "source": "USDA Forest Service FIA (pyFIA validated)",
+                }
+            elif metric == "tpa":
+                total_tpa = float(df[est_col].sum())
+                se_pct = float(df[se_col].mean()) if se_col else 0.0
+                return {
+                    "state": state,
+                    "county_fips": county_fips,
+                    "metric": metric,
+                    "land_type": land_type,
+                    "total_tpa": total_tpa,
+                    "se_percent": se_pct,
+                    "by_species": df.to_dict("records") if by_species else None,
+                    "source": "USDA Forest Service FIA (pyFIA validated)",
+                }
+            else:
+                raise ValueError(f"Unknown metric: {metric}")
+
     async def lookup_species(
         self,
         spcd: int | None = None,
@@ -1592,6 +1538,5 @@ class FIAService:
                 "common_name": common_name,
                 "state": state,
             }
-
 
 fia_service = FIAService()
