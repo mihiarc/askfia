@@ -31,4 +31,4 @@ USER appuser
 
 EXPOSE 8000
 
-CMD ["uvicorn", "pyfia_api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "askfia_api.main:app", "--host", "0.0.0.0", "--port", "8000"]

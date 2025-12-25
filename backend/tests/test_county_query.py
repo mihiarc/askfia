@@ -7,7 +7,7 @@ import sys
 # Add the src directory to the path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from pyfia_api.services.fia_service import FIAService
+from askfia_api.services.fia_service import FIAService
 
 
 async def test_county_query():

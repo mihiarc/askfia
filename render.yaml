@@ -1,12 +1,12 @@
 services:
   - type: web
-    name: pyfia-api
+    name: askfia-api
     runtime: python
-    plan: standard  # 2GB RAM - needed for pyFIA estimation
+    plan: standard  # 2GB RAM - needed for PyFIA estimation
     region: oregon
     rootDir: backend
     buildCommand: pip install -r requirements.txt && pip install -e .
-    startCommand: uvicorn pyfia_api.main:app --host 0.0.0.0 --port $PORT
+    startCommand: uvicorn askfia_api.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHON_VERSION
         value: "3.11.11"

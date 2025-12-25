@@ -5,7 +5,7 @@
 
 # Default target
 help:
-	@echo "pyFIA Agent - Development Commands"
+	@echo "AskFIA - Development Commands"
 	@echo ""
 	@echo "Setup:"
 	@echo "  make install          Install all dependencies (backend + frontend)"
@@ -77,7 +77,7 @@ dev:
 
 dev-backend:
 	@echo "Starting FastAPI backend on http://localhost:8000"
-	cd backend && uv run uvicorn pyfia_api.main:app --reload --host 0.0.0.0 --port 8000
+	cd backend && uv run uvicorn askfia_api.main:app --reload --host 0.0.0.0 --port 8000
 
 dev-frontend:
 	@echo "Starting Next.js frontend on http://localhost:3000"
@@ -92,7 +92,7 @@ test: test-backend test-frontend
 
 test-backend:
 	@echo "Running backend tests..."
-	cd backend && uv run pytest -v --cov=src/pyfia_api --cov-report=term-missing
+	cd backend && uv run pytest -v --cov=src/askfia_api --cov-report=term-missing
 
 test-frontend:
 	@echo "Running frontend tests..."
@@ -122,7 +122,7 @@ format:
 
 types:
 	@echo "Type checking backend..."
-	cd backend && uv run mypy src/pyfia_api
+	cd backend && uv run mypy src/askfia_api
 
 check: lint types test
 	@echo "All checks passed!"
@@ -178,5 +178,5 @@ clean:
 # Generate OpenAPI schema from backend
 openapi:
 	@echo "Generating OpenAPI schema..."
-	cd backend && uv run python -c "import json; from pyfia_api.main import app; print(json.dumps(app.openapi(), indent=2))" > ../openapi.json
+	cd backend && uv run python -c "import json; from askfia_api.main import app; print(json.dumps(app.openapi(), indent=2))" > ../openapi.json
 	@echo "Schema saved to openapi.json"

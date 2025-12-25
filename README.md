@@ -1,30 +1,36 @@
-# pyFIA Agent
+# AskFIA
 
 A public-facing AI-powered interface to the USDA Forest Service Forest Inventory and Analysis (FIA) database.
 
+Part of the **FIA Python Ecosystem**:
+- [PyFIA](https://github.com/mihiarc/pyfia): Survey/plot data analysis
+- [GridFIA](https://github.com/mihiarc/gridfia): Spatial raster analysis
+- [PyFVS](https://github.com/mihiarc/pyfvs): Growth/yield simulation
+- [AskFIA](https://github.com/mihiarc/askfia): AI conversational interface (this package)
+
 ## Features
 
-- 🌲 **Natural Language Queries** - Ask questions about forest inventory in plain English
-- 📊 **Validated Statistics** - All estimates match official USFS EVALIDator results
-- 📥 **Data Downloads** - Create custom data exports for your own analysis
-- 📈 **Visualizations** - Interactive charts and maps (coming soon)
+- Natural Language Queries - Ask questions about forest inventory in plain English
+- Validated Statistics - All estimates match official USFS EVALIDator results
+- Data Downloads - Create custom data exports for your own analysis
+- Visualizations - Interactive charts and maps (coming soon)
 
 ## Tech Stack
 
 - **Frontend**: Next.js 15, Vercel AI SDK, shadcn/ui, Tailwind CSS
 - **Backend**: FastAPI, LangChain, Claude Sonnet
-- **Data**: [pyFIA](https://github.com/mihiarc/pyfia) (DuckDB/Polars)
+- **Data**: [PyFIA](https://github.com/mihiarc/pyfia) (DuckDB/Polars)
 
 ## Project Structure
 
 ```
-pyfia-agent/
+askfia/
 ├── frontend/          # Next.js application
 │   ├── app/           # App Router pages
 │   ├── components/    # React components
 │   └── lib/           # Utilities
 ├── backend/           # FastAPI application
-│   ├── src/pyfia_api/ # API source code
+│   ├── src/askfia_api/ # API source code
 │   └── data/          # FIA database files (gitignored)
 ├── docker-compose.yml # Local development
 └── README.md
@@ -43,8 +49,8 @@ pyfia-agent/
 
 1. **Clone and setup**:
    ```bash
-   git clone https://github.com/yourusername/pyfia-agent.git
-   cd pyfia-agent
+   git clone https://github.com/mihiarc/askfia.git
+   cd askfia
    ```
 
 2. **Start the backend**:
@@ -53,7 +59,7 @@ pyfia-agent/
    cp .env.example .env
    # Add your ANTHROPIC_API_KEY to .env
    uv sync
-   uv run uvicorn pyfia_api.main:app --reload
+   uv run uvicorn askfia_api.main:app --reload
    ```
 
 3. **Start the frontend** (new terminal):
@@ -110,7 +116,7 @@ BACKEND_URL=http://localhost:8000
 
 ## Data Source
 
-All data comes from the USDA Forest Service [Forest Inventory and Analysis (FIA)](https://www.fia.fs.usda.gov/) program. Statistics are computed using [pyFIA](https://github.com/mihiarc/pyfia), which implements design-based estimation methods following Bechtold & Patterson (2005).
+All data comes from the USDA Forest Service [Forest Inventory and Analysis (FIA)](https://www.fia.fs.usda.gov/) program. Statistics are computed using [PyFIA](https://github.com/mihiarc/pyfia), which implements design-based estimation methods following Bechtold & Patterson (2005).
 
 ## License
 

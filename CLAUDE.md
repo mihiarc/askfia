@@ -1,11 +1,17 @@
-# pyfia-agent
+# AskFIA
 
 AI-powered natural language interface to the USDA Forest Service FIA database.
+
+Part of the **FIA Python Ecosystem**:
+- [PyFIA](https://github.com/mihiarc/pyfia): Survey/plot data analysis
+- [GridFIA](https://github.com/mihiarc/gridfia): Spatial raster analysis
+- [PyFVS](https://github.com/mihiarc/pyfvs): Growth/yield simulation
+- [AskFIA](https://github.com/mihiarc/askfia): AI conversational interface (this package)
 
 ## Project Structure
 
 ```
-pyfia-agent/
+askfia/
 ├── frontend/          # Next.js 15 + React 19 (Netlify)
 ├── backend/           # FastAPI Python API (Render)
 └── data/              # Local FIA DuckDB cache (gitignored)
@@ -17,9 +23,9 @@ pyfia-agent/
 
 | Property | Value |
 |----------|-------|
-| Service Name | `pyfia-api` |
+| Service Name | `askfia-api` |
 | Service ID | `srv-d53fn7khg0os738rbgr0` |
-| URL | https://pyfia-api.onrender.com |
+| URL | https://askfia-api.onrender.com |
 | Dashboard | https://dashboard.render.com/web/srv-d53fn7khg0os738rbgr0 |
 | Region | Oregon |
 | Plan | Standard (2GB RAM) |
@@ -27,7 +33,7 @@ pyfia-agent/
 | Root Directory | `backend` |
 | Health Check | `/health` |
 | Auto Deploy | Yes (on push to `main`) |
-| Repository | https://github.com/mihiarc/pyfia-agent |
+| Repository | https://github.com/mihiarc/askfia |
 
 **Build/Start Commands:**
 ```bash
@@ -35,7 +41,7 @@ pyfia-agent/
 pip install -r requirements.txt && pip install -e .
 
 # Start
-uvicorn pyfia_api.main:app --host 0.0.0.0 --port $PORT
+uvicorn askfia_api.main:app --host 0.0.0.0 --port $PORT
 ```
 
 **Environment Variables (Render):**
@@ -49,17 +55,17 @@ uvicorn pyfia_api.main:app --host 0.0.0.0 --port $PORT
 
 | Property | Value |
 |----------|-------|
-| Site Name | `pyfia-agent` |
+| Site Name | `askfia` |
 | Site ID | `60dcedd5-a264-4e59-9fdc-4fe8c7fc9d7f` |
-| URL | https://pyfia-agent.netlify.app |
-| Dashboard | https://app.netlify.com/projects/pyfia-agent |
+| URL | https://askfia.netlify.app |
+| Dashboard | https://app.netlify.com/projects/askfia |
 | Build Command | `npm run build` |
 | Publish Directory | `.next` |
 | Node Version | 20 |
 | Plugin | `@netlify/plugin-nextjs` |
 
 **Environment Variables (Netlify):**
-- `NEXT_PUBLIC_API_URL` - Backend API URL (https://pyfia-api.onrender.com)
+- `NEXT_PUBLIC_API_URL` - Backend API URL (https://askfia-api.onrender.com)
 
 ### MotherDuck (Serverless DuckDB)
 
@@ -85,7 +91,7 @@ make install
 make dev
 
 # Run backend only
-cd backend && uv run uvicorn pyfia_api.main:app --reload
+cd backend && uv run uvicorn askfia_api.main:app --reload
 
 # Run frontend only
 cd frontend && npm run dev
@@ -102,7 +108,7 @@ make lint
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/health` | GET | Health check |
-| `/health/ready` | GET | Readiness (pyFIA + Anthropic) |
+| `/health/ready` | GET | Readiness (PyFIA + Anthropic) |
 | `/api/v1/chat/stream` | POST | Streaming chat with Claude |
 | `/api/v1/query/area` | POST | Forest area queries |
 | `/api/v1/query/volume` | POST | Timber volume queries |
@@ -117,5 +123,5 @@ make lint
 
 - **Frontend:** Next.js 15, React 19, Tailwind CSS, shadcn/ui, Vercel AI SDK
 - **Backend:** FastAPI, Pydantic v2, LangChain, Claude API
-- **Data:** pyFIA, DuckDB, Polars, MotherDuck
+- **Data:** PyFIA, DuckDB, Polars, MotherDuck
 - **Deployment:** Render (backend), Netlify (frontend), Cloudflare R2 (storage)

@@ -8,7 +8,7 @@ import jwt
 from fastapi import APIRouter, Cookie, Response
 from pydantic import BaseModel
 
-from pyfia_api.config import get_settings
+from askfia_api.config import get_settings
 
 logger = logging.getLogger(__name__)
 
