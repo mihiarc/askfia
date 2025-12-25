@@ -1202,7 +1202,7 @@ class FIAAgent:
                 lc_messages.append(AIMessage(content=msg["content"]))
 
         # Tool execution loop - supports multiple rounds of tool calls
-        max_iterations = 5  # Prevent infinite loops
+        max_iterations = 10  # Allow complex multi-step queries
         iteration = 0
 
         while iteration < max_iterations:
@@ -1294,6 +1294,15 @@ class FIAAgent:
                         tool_call_id=tool_call["id"],
                     )
                 )
+
+        # Check if we hit the iteration limit without a final response
+        if iteration >= max_iterations:
+            logger.warning(f"Hit max_iterations limit ({max_iterations}) without final response")
+            yield {
+                "type": "text",
+                "content": "I apologize, but this query required more steps than expected. "
+                "Please try breaking it into simpler questions, or try again with a more specific query.",
+            }
 
         # Calculate latency
         latency_ms = int((time.time() - start_time) * 1000)
