@@ -11,7 +11,6 @@ import pandas as pd
 
 from ..config import settings
 from .storage import storage
-from . import species_data
 
 logger = logging.getLogger(__name__)
 
@@ -561,26 +560,69 @@ class FIAService:
     ) -> dict:
         """Query timber removals (harvest) across states."""
         results = []
+        missing_grm_states = []
 
         for state in states:
             state = state.upper()
 
             with self._get_fia_connection(state) as db:
+                # Check if required GRM tables exist
+                required_tables = ["TREE_GRM_COMPONENT", "TREE_GRM_MIDPT"]
+
+                missing_tables = []
+                for table in required_tables:
+                    if hasattr(db._reader._backend, "table_exists"):
+                        if not db._reader._backend.table_exists(table):
+                            missing_tables.append(table)
+                    else:
+                        try:
+                            if table not in db.tables:
+                                db.load_table(table)
+                        except Exception:
+                            missing_tables.append(table)
+
+                if missing_tables:
+                    logger.warning(
+                        f"State {state} is missing GRM tables: {missing_tables}. "
+                        "Removals data not available."
+                    )
+                    missing_grm_states.append(state)
+                    continue
+
                 kwargs = {"measure": "volume", "variance": True}
                 if by_species:
                     kwargs["grp_by"] = "SPCD"
                 if tree_domain:
                     kwargs["tree_domain"] = tree_domain
 
-                # Use db.removals() method which handles MotherDuck type compatibility
-                result_df = db.removals(**kwargs)
-                df = (
-                    result_df.to_pandas()
-                    if hasattr(result_df, "to_pandas")
-                    else result_df
-                )
-                df["STATE"] = state
-                results.append(df)
+                try:
+                    # Use db.removals() method which handles MotherDuck type compatibility
+                    result_df = db.removals(**kwargs)
+                    df = (
+                        result_df.to_pandas()
+                        if hasattr(result_df, "to_pandas")
+                        else result_df
+                    )
+                    df["STATE"] = state
+                    results.append(df)
+                except Exception as e:
+                    logger.error(f"Error querying removals for {state}: {e}")
+                    missing_grm_states.append(state)
+                    continue
+
+        # If no states had GRM data, return error response
+        if not results:
+            return {
+                "error": (
+                    f"Removals data is not available for the requested state(s): {states}. "
+                    "Removals estimation requires GRM tables (TREE_GRM_COMPONENT, TREE_GRM_MIDPT) "
+                    "which are not available in all FIA databases."
+                ),
+                "states": states,
+                "missing_grm_states": missing_grm_states,
+                "available_metrics": ["area", "volume", "biomass", "tpa"],
+                "source": "USDA Forest Service FIA (pyFIA)",
+            }
 
         combined = pd.concat(results, ignore_index=True)
 
@@ -603,7 +645,7 @@ class FIAService:
         else:
             se_pct = 0.0
 
-        return {
+        result = {
             "states": states,
             "total_removals_cuft": total_removals,
             "total_removals_million_cuft": total_removals / 1e6,
@@ -611,6 +653,18 @@ class FIAService:
             "by_species": combined.to_dict("records") if by_species else None,
             "source": "USDA Forest Service FIA (pyFIA validated)",
         }
+
+        # Add warning if some states were missing GRM data
+        if missing_grm_states:
+            result["warning"] = (
+                f"Removals data not available for: {', '.join(missing_grm_states)}. "
+                "Results only include states with GRM tables."
+            )
+            result["states_with_data"] = [
+                s for s in states if s not in missing_grm_states
+            ]
+
+        return result
 
     async def query_growth(
         self,
@@ -778,11 +832,33 @@ class FIAService:
     ) -> dict:
         """Query forest area change across states."""
         results = []
+        missing_table_states = []
 
         for state in states:
             state = state.upper()
 
             with self._get_fia_connection(state) as db:
+                # Check if required table exists
+                required_table = "SUBP_COND_CHNG_MTRX"
+                table_exists = False
+                if hasattr(db._reader._backend, "table_exists"):
+                    table_exists = db._reader._backend.table_exists(required_table)
+                else:
+                    try:
+                        if required_table not in db.tables:
+                            db.load_table(required_table)
+                        table_exists = True
+                    except Exception:
+                        table_exists = False
+
+                if not table_exists:
+                    logger.warning(
+                        f"State {state} is missing SUBP_COND_CHNG_MTRX table. "
+                        "Area change data not available."
+                    )
+                    missing_table_states.append(state)
+                    continue
+
                 kwargs = {
                     "land_type": land_type,
                     "change_type": change_type,
@@ -792,15 +868,36 @@ class FIAService:
                 if grp_by:
                     kwargs["grp_by"] = grp_by
 
-                # Use db.area_change() method which handles MotherDuck type compatibility
-                result_df = db.area_change(**kwargs)
-                df = (
-                    result_df.to_pandas()
-                    if hasattr(result_df, "to_pandas")
-                    else result_df
-                )
-                df["STATE"] = state
-                results.append(df)
+                try:
+                    # Use db.area_change() method which handles MotherDuck type compatibility
+                    result_df = db.area_change(**kwargs)
+                    df = (
+                        result_df.to_pandas()
+                        if hasattr(result_df, "to_pandas")
+                        else result_df
+                    )
+                    df["STATE"] = state
+                    results.append(df)
+                except Exception as e:
+                    logger.error(f"Error querying area change for {state}: {e}")
+                    missing_table_states.append(state)
+                    continue
+
+        # If no states had area change data, return error response
+        if not results:
+            return {
+                "error": (
+                    f"Area change data is not available for the requested state(s): {states}. "
+                    "Area change estimation requires the SUBP_COND_CHNG_MTRX table "
+                    "which tracks subplot-level condition changes between measurement periods. "
+                    "This table may not be available in all FIA databases, especially newer inventories "
+                    "or MotherDuck databases."
+                ),
+                "states": states,
+                "states_missing_data": missing_table_states,
+                "available_metrics": ["area", "volume", "biomass", "tpa"],
+                "source": "USDA Forest Service FIA (pyFIA)",
+            }
 
         combined = pd.concat(results, ignore_index=True)
 
@@ -823,7 +920,7 @@ class FIAService:
         else:
             se_pct = 0.0
 
-        return {
+        result = {
             "states": states,
             "land_type": land_type,
             "change_type": change_type,
@@ -832,6 +929,18 @@ class FIAService:
             "breakdown": combined.to_dict("records") if grp_by else None,
             "source": "USDA Forest Service FIA (pyFIA validated)",
         }
+
+        # Add warning if some states were missing area change data
+        if missing_table_states:
+            result["warning"] = (
+                f"Area change data not available for: {', '.join(missing_table_states)}. "
+                "Results only include states with SUBP_COND_CHNG_MTRX table."
+            )
+            result["states_with_data"] = [
+                s for s in states if s not in missing_table_states
+            ]
+
+        return result
 
     async def query_by_stand_size(
         self,
@@ -982,16 +1091,32 @@ class FIAService:
 
         combined = pd.concat(results, ignore_index=True)
 
-        # Get forest type names from the database
-        # Use the first state's database to get reference table
-        with self._get_fia_connection(states[0]) as db:
-            import polars as pl
-            from pyfia.utils.reference_tables import join_forest_type_names
+        # Try to get forest type names from the database reference table
+        # Fall back to hardcoded dictionary if REF_FOREST_TYPE is not available (e.g., MotherDuck)
+        try:
+            with self._get_fia_connection(states[0]) as db:
+                import polars as pl
+                from pyfia.utils.reference_tables import join_forest_type_names
 
-            # Convert to polars for reference table join
-            combined_pl = pl.from_pandas(combined)
-            combined_pl = join_forest_type_names(combined_pl, db)
-            combined = combined_pl.to_pandas()
+                # Convert to polars for reference table join
+                combined_pl = pl.from_pandas(combined)
+                combined_pl = join_forest_type_names(combined_pl, db)
+                combined = combined_pl.to_pandas()
+                logger.info(
+                    "Successfully joined forest type names from REF_FOREST_TYPE"
+                )
+        except Exception as e:
+            # REF_FOREST_TYPE table not available (common in MotherDuck)
+            # Use hardcoded forest type names as fallback
+            logger.info(
+                f"REF_FOREST_TYPE table not available ({e}), using hardcoded forest type names"
+            )
+            from .forest_types import get_forest_type_name
+
+            # Add forest type names using our hardcoded dictionary
+            combined["FOREST_TYPE_NAME"] = combined["FORTYPCD"].apply(
+                lambda x: get_forest_type_name(int(x)) if pd.notna(x) else "Unknown"
+            )
 
         # Get estimate and SE columns
         est_col = _get_estimate_column(combined, metric)
@@ -1010,7 +1135,7 @@ class FIAService:
                 .reset_index()
             )
         else:
-            # Fallback if reference table join failed
+            # Final fallback if something went wrong
             grouped = (
                 combined.groupby(["FORTYPCD"], dropna=False)
                 .agg(
@@ -1328,61 +1453,6 @@ class FIAService:
                     "state": state,
                     "county_fips": county_fips,
                     "metric": metric,
-                    "land_type": land_type,
-                    "total_area_acres": total_area,
-                    "se_percent": se_pct,
-                    "source": "USDA Forest Service FIA (pyFIA validated)",
-                }
-            elif metric == "volume":
-                total_vol = float(df[est_col].sum())
-                se_pct = float(df[se_col].mean()) if se_col else 0.0
-                return {
-                    "state": state,
-                    "county_fips": county_fips,
-                    "metric": metric,
-                    "total_volume_cuft": total_vol,
-                    "total_volume_billion_cuft": total_vol / 1e9,
-                    "se_percent": se_pct,
-                    "by_species": df.to_dict("records") if by_species else None,
-                    "source": "USDA Forest Service FIA (pyFIA validated)",
-                }
-            elif metric == "biomass":
-                total_biomass = (
-                    float(df["BIO_TOTAL"].sum()) if "BIO_TOTAL" in df.columns else 0.0
-                )
-                total_carbon = (
-                    float(df["CARB_TOTAL"].sum())
-                    if "CARB_TOTAL" in df.columns
-                    else total_biomass * 0.47
-                )
-                se_pct = float(df[se_col].mean()) if se_col else 0.0
-                return {
-                    "state": state,
-                    "county_fips": county_fips,
-                    "metric": metric,
-                    "land_type": land_type,
-                    "total_biomass_tons": total_biomass,
-                    "carbon_mmt": total_carbon / 1e6,
-                    "se_percent": se_pct,
-                    "by_species": df.to_dict("records") if by_species else None,
-                    "source": "USDA Forest Service FIA (pyFIA validated)",
-                }
-            elif metric == "tpa":
-                total_tpa = float(df[est_col].sum())
-                se_pct = float(df[se_col].mean()) if se_col else 0.0
-                return {
-                    "state": state,
-                    "county_fips": county_fips,
-                    "metric": metric,
-                    "land_type": land_type,
-                    "total_tpa": total_tpa,
-                    "se_percent": se_pct,
-                    "by_species": df.to_dict("records") if by_species else None,
-                    "source": "USDA Forest Service FIA (pyFIA validated)",
-                }
-            else:
-                raise ValueError(f"Unknown metric: {metric}")
-
     async def lookup_species(
         self,
         spcd: int | None = None,
@@ -1391,7 +1461,7 @@ class FIAService:
         limit: int = 10,
     ) -> dict:
         """
-        Lookup species information from FIA REF_SPECIES table.
+        Lookup species information using in-memory species reference data.
 
         This method provides three main use cases:
         1. Convert species code (SPCD) to common/scientific names
@@ -1415,135 +1485,53 @@ class FIAService:
             Species information including SPCD, common name, scientific name,
             and optionally volume data for state queries
         """
-        # Use any state for reference table access (REF_SPECIES is state-independent)
-        reference_state = state.upper() if state else "NC"
-
         try:
-            with self._get_fia_connection(reference_state) as db:
-                # Query REF_SPECIES directly using SQL to avoid schema lookup issues
-                # MotherDuck databases include REF_SPECIES as a view
-                query = """
-                    SELECT SPCD, COMMON_NAME, SCIENTIFIC_NAME, GENUS, SPECIES
-                    FROM REF_SPECIES
-                """
-
-                try:
-                    # Use the underlying connection from the FIA object
-                    species_df = db._reader._backend._connection.execute(query).pl()
-                except Exception as e:
-                    # If REF_SPECIES doesn't exist, return empty results
-                    logger.warning(f"Could not access REF_SPECIES table: {e}")
-                    # Return hardcoded common species as fallback
-                    species_data = {
-                        "SPCD": [316, 131, 318, 110, 121, 129, 802, 833, 531, 693],
-                        "COMMON_NAME": [
-                            "loblolly pine",
-                            "slash pine",
-                            "longleaf pine",
-                            "shortleaf pine",
-                            "white oak",
-                            "northern red oak",
-                            "yellow-poplar",
-                            "sweetgum",
-                            "red maple",
-                            "black oak",
-                        ],
-                        "SCIENTIFIC_NAME": [
-                            "Pinus taeda",
-                            "Pinus elliottii",
-                            "Pinus palustris",
-                            "Pinus echinata",
-                            "Quercus alba",
-                            "Quercus rubra",
-                            "Liriodendron tulipifera",
-                            "Liquidambar styraciflua",
-                            "Acer rubrum",
-                            "Quercus velutina",
-                        ],
-                        "GENUS": ["Pinus"] * 4 + ["Quercus"] * 4 + ["Acer"] + ["Quercus"],
-                        "SPECIES": ["taeda", "elliottii", "palustris", "echinata",
-                                   "alba", "rubra", None, "styraciflua", "rubrum", "velutina"],
-                    }
-                    import polars as pl
-                    species_df = pl.DataFrame(species_data)
-
-                # Convert to pandas for easier manipulation
-                if hasattr(species_df, "collect"):
-                    species_df = species_df.collect()
-                species_pd = (
-                    species_df.to_pandas()
-                    if hasattr(species_df, "to_pandas")
-                    else species_df
-                )
-
-                # Case 1: Lookup by species code
-                if spcd is not None:
-                    matches = species_pd[species_pd["SPCD"] == spcd]
-                    if len(matches) == 0:
-                        return {
-                            "mode": "lookup_by_code",
-                            "spcd": spcd,
-                            "found": False,
-                            "message": f"No species found with code {spcd}",
-                        }
-
-                    species_info = matches.iloc[0]
+            # Case 1: Lookup by species code
+            if spcd is not None:
+                species_info = species_data.lookup_by_code(spcd)
+                if species_info is None:
                     return {
                         "mode": "lookup_by_code",
-                        "spcd": int(species_info["SPCD"]),
-                        "common_name": str(species_info["COMMON_NAME"]),
-                        "scientific_name": str(species_info["SCIENTIFIC_NAME"]),
-                        "genus": str(species_info["GENUS"])
-                        if pd.notna(species_info["GENUS"])
-                        else None,
-                        "species": str(species_info["SPECIES"])
-                        if pd.notna(species_info["SPECIES"])
-                        else None,
-                        "found": True,
+                        "spcd": spcd,
+                        "found": False,
+                        "message": f"No species found with code {spcd}",
                     }
 
-                # Case 2: Search by common name
-                if common_name is not None:
-                    search_term = common_name.lower()
-                    matches = species_pd[
-                        species_pd["COMMON_NAME"]
-                        .str.lower()
-                        .str.contains(search_term, na=False)
-                    ]
+                return {
+                    "mode": "lookup_by_code",
+                    "spcd": spcd,
+                    "common_name": species_info["common_name"],
+                    "scientific_name": species_info["scientific_name"],
+                    "found": True,
+                }
 
-                    if len(matches) == 0:
-                        return {
-                            "mode": "search_by_name",
-                            "search_term": common_name,
-                            "found": False,
-                            "count": 0,
-                            "results": [],
-                            "message": f"No species found matching '{common_name}'",
-                        }
+            # Case 2: Search by common name
+            if common_name is not None:
+                results = species_data.search_by_name(common_name, limit=limit)
 
-                    # Limit results
-                    matches = matches.head(limit)
-
-                    results = []
-                    for _, row in matches.iterrows():
-                        results.append(
-                            {
-                                "spcd": int(row["SPCD"]),
-                                "common_name": str(row["COMMON_NAME"]),
-                                "scientific_name": str(row["SCIENTIFIC_NAME"]),
-                            }
-                        )
-
+                if not results:
                     return {
                         "mode": "search_by_name",
                         "search_term": common_name,
-                        "found": True,
-                        "count": len(results),
-                        "results": results,
+                        "found": False,
+                        "count": 0,
+                        "results": [],
+                        "message": f"No species found matching '{common_name}'",
                     }
 
-                # Case 3: List top species by volume in a state
-                if state is not None:
+                return {
+                    "mode": "search_by_name",
+                    "search_term": common_name,
+                    "found": True,
+                    "count": len(results),
+                    "results": results,
+                }
+
+            # Case 3: List top species by volume in a state
+            if state is not None:
+                state = state.upper()
+
+                with self._get_fia_connection(state) as db:
                     # Query volume by species for the state
                     volume_df = db.volume(grp_by="SPCD")
                     vol_pd = (
@@ -1558,39 +1546,43 @@ class FIAService:
                     # Sort by volume and take top N
                     top_species = vol_pd.nlargest(limit, vol_col)
 
-                    # Join with species names
-                    top_with_names = top_species.merge(
-                        species_pd[["SPCD", "COMMON_NAME", "SCIENTIFIC_NAME"]],
-                        on="SPCD",
-                        how="left",
-                    )
-
+                    # Add species names from our reference data
                     results = []
-                    for _, row in top_with_names.iterrows():
-                        results.append(
-                            {
-                                "spcd": int(row["SPCD"]),
-                                "common_name": str(row["COMMON_NAME"])
-                                if pd.notna(row.get("COMMON_NAME"))
-                                else f"Unknown (SPCD {int(row['SPCD'])})",
-                                "scientific_name": str(row["SCIENTIFIC_NAME"])
-                                if pd.notna(row.get("SCIENTIFIC_NAME"))
-                                else None,
-                                "volume_cuft": float(row[vol_col]),
-                            }
-                        )
+                    for _, row in top_species.iterrows():
+                        spcd_val = int(row["SPCD"])
+                        species_info = species_data.lookup_by_code(spcd_val)
+
+                        if species_info:
+                            results.append(
+                                {
+                                    "spcd": spcd_val,
+                                    "common_name": species_info["common_name"],
+                                    "scientific_name": species_info["scientific_name"],
+                                    "volume_cuft": float(row[vol_col]),
+                                }
+                            )
+                        else:
+                            # Unknown species - include anyway with placeholder name
+                            results.append(
+                                {
+                                    "spcd": spcd_val,
+                                    "common_name": f"Unknown (SPCD {spcd_val})",
+                                    "scientific_name": None,
+                                    "volume_cuft": float(row[vol_col]),
+                                }
+                            )
 
                     return {
                         "mode": "top_species_by_state",
-                        "state": state.upper(),
+                        "state": state,
                         "count": len(results),
                         "results": results,
                     }
 
-                # No valid parameters provided
-                return {
-                    "error": "Must provide spcd, common_name, or state parameter",
-                }
+            # No valid parameters provided
+            return {
+                "error": "Must provide spcd, common_name, or state parameter",
+            }
 
         except Exception as e:
             logger.error(f"Error in lookup_species: {e}", exc_info=True)
