@@ -11,6 +11,7 @@ import pandas as pd
 
 from ..config import settings
 from .storage import storage
+from . import species_data
 
 logger = logging.getLogger(__name__)
 
@@ -93,10 +94,32 @@ def _get_estimate_column(df: pd.DataFrame, metric: str) -> str:
     metric_cols = {
         "area": ["AREA", "AREA_TOTAL", "area", "ESTIMATE", "estimate"],
         "volume": ["VOL_TOTAL", "VOLUME", "volume", "VOLCFNET", "ESTIMATE", "estimate"],
-        "biomass": ["BIO_TOTAL", "BIO_ACRE", "BIOMASS", "biomass", "DRYBIO_AG", "ESTIMATE", "estimate"],
+        "biomass": [
+            "BIO_TOTAL",
+            "BIO_ACRE",
+            "BIOMASS",
+            "biomass",
+            "DRYBIO_AG",
+            "ESTIMATE",
+            "estimate",
+        ],
         "tpa": ["TPA", "TPA_TOTAL", "tpa", "ESTIMATE", "estimate"],
-        "mortality": ["MORTALITY", "mortality", "ESTIMATE", "estimate"],
-        "growth": ["GROWTH", "growth", "ESTIMATE", "estimate"],
+        "mortality": [
+            "MORT_TOTAL",
+            "MORT_ACRE",
+            "MORTALITY",
+            "mortality",
+            "ESTIMATE",
+            "estimate",
+        ],
+        "growth": [
+            "GROWTH_TOTAL",
+            "GROWTH_ACRE",
+            "GROWTH",
+            "growth",
+            "ESTIMATE",
+            "estimate",
+        ],
     }
 
     candidates = metric_cols.get(metric, ["ESTIMATE", "estimate"])
@@ -106,7 +129,9 @@ def _get_estimate_column(df: pd.DataFrame, metric: str) -> str:
 
     # Fallback: first numeric column that's not SE/variance related
     for col in df.columns:
-        if df[col].dtype in ['float64', 'int64'] and not any(x in col.upper() for x in ['SE', 'VAR', 'CV', 'CI', 'PLOT', 'YEAR']):
+        if df[col].dtype in ["float64", "int64"] and not any(
+            x in col.upper() for x in ["SE", "VAR", "CV", "CI", "PLOT", "YEAR"]
+        ):
             return col
 
     raise KeyError(f"Could not find estimate column. Available: {list(df.columns)}")
@@ -118,16 +143,22 @@ def _get_se_percent_column(df: pd.DataFrame, metric: str) -> str | None:
     metric_se_cols = {
         "area": ["AREA_SE_PERCENT", "AREA_SE", "SE_PERCENT"],
         "volume": ["VOL_TOTAL_SE", "VOLUME_SE_PERCENT", "VOLUME_SE", "SE_PERCENT"],
-        "biomass": ["BIO_TOTAL_SE", "BIO_ACRE_SE", "BIOMASS_SE_PERCENT", "BIOMASS_SE", "SE_PERCENT"],
+        "biomass": [
+            "BIO_TOTAL_SE",
+            "BIO_ACRE_SE",
+            "BIOMASS_SE_PERCENT",
+            "BIOMASS_SE",
+            "SE_PERCENT",
+        ],
         "tpa": ["TPA_SE", "TPA_SE_PERCENT", "SE_PERCENT"],
-        "mortality": ["MORTALITY_SE", "SE_PERCENT"],
-        "growth": ["GROWTH_SE", "SE_PERCENT"],
+        "mortality": ["MORT_TOTAL_SE", "MORT_ACRE_SE", "MORTALITY_SE", "SE_PERCENT"],
+        "growth": ["GROWTH_TOTAL_SE", "GROWTH_ACRE_SE", "GROWTH_SE", "SE_PERCENT"],
     }
 
     # Try metric-specific columns first
     if metric in metric_se_cols:
         for col in metric_se_cols[metric]:
-            if col in df.columns:
+            if col in df.columns and df[col].notna().any():
                 return col
 
     # Try common patterns
@@ -141,12 +172,12 @@ def _get_se_percent_column(df: pd.DataFrame, metric: str) -> str | None:
     ]
 
     for col in candidates:
-        if col in df.columns:
+        if col in df.columns and df[col].notna().any():
             return col
 
     # Look for any column containing SE_PERC or cv
     for col in df.columns:
-        if "SE_PERC" in col.upper() or col.upper() == "CV":
+        if ("SE_PERC" in col.upper() or col.upper() == "CV") and df[col].notna().any():
             return col
 
     return None
@@ -177,12 +208,16 @@ class FIAService:
 
             if database:
                 logger.info(f"Using MotherDuck for {state}: {database}")
-                with MotherDuckFIA(database, motherduck_token=self._motherduck_token) as db:
+                with MotherDuckFIA(
+                    database, motherduck_token=self._motherduck_token
+                ) as db:
                     db.clip_most_recent()
                     yield db
             else:
                 # State not found in MotherDuck, fall back to local storage
-                logger.warning(f"State {state} not found in MotherDuck, falling back to local storage")
+                logger.warning(
+                    f"State {state} not found in MotherDuck, falling back to local storage"
+                )
                 from pyfia import FIA
 
                 db_path = self._get_db_path(state)
@@ -215,7 +250,11 @@ class FIAService:
                 # Use db.area() method which uses server-side aggregation for MotherDuck
                 # This avoids loading full tables into memory
                 result_df = db.area(land_type=land_type, grp_by=grp_by)
-                df = result_df.to_pandas() if hasattr(result_df, "to_pandas") else result_df
+                df = (
+                    result_df.to_pandas()
+                    if hasattr(result_df, "to_pandas")
+                    else result_df
+                )
                 df["STATE"] = state
                 results.append(df)
 
@@ -257,7 +296,11 @@ class FIAService:
 
                 # Use db.volume() method which handles MotherDuck type compatibility
                 result_df = db.volume(**kwargs)
-                df = result_df.to_pandas() if hasattr(result_df, "to_pandas") else result_df
+                df = (
+                    result_df.to_pandas()
+                    if hasattr(result_df, "to_pandas")
+                    else result_df
+                )
                 df["STATE"] = state
                 results.append(df)
 
@@ -297,15 +340,27 @@ class FIAService:
 
                 # Use db.biomass() method which handles MotherDuck type compatibility
                 result_df = db.biomass(**kwargs)
-                df = result_df.to_pandas() if hasattr(result_df, "to_pandas") else result_df
+                df = (
+                    result_df.to_pandas()
+                    if hasattr(result_df, "to_pandas")
+                    else result_df
+                )
                 df["STATE"] = state
                 results.append(df)
 
         combined = pd.concat(results, ignore_index=True)
 
         # pyFIA returns BIO_TOTAL and CARB_TOTAL columns directly
-        total_biomass = float(combined["BIO_TOTAL"].sum()) if "BIO_TOTAL" in combined.columns else 0.0
-        total_carbon = float(combined["CARB_TOTAL"].sum()) if "CARB_TOTAL" in combined.columns else total_biomass * 0.47
+        total_biomass = (
+            float(combined["BIO_TOTAL"].sum())
+            if "BIO_TOTAL" in combined.columns
+            else 0.0
+        )
+        total_carbon = (
+            float(combined["CARB_TOTAL"].sum())
+            if "CARB_TOTAL" in combined.columns
+            else total_biomass * 0.47
+        )
 
         # Get SE if available (pyFIA returns BIO_TOTAL_SE)
         se_col = _get_se_percent_column(combined, "biomass")
@@ -329,32 +384,675 @@ class FIAService:
     async def query_tpa(
         self,
         states: list[str],
-        tree_domain: str = "STATUSCD == 1",
         by_species: bool = False,
+        by_size_class: bool = False,
+        tree_domain: str | None = None,
+        land_type: str = "forest",
+        tree_type: str = "live",
     ) -> dict:
-        """Query trees per acre."""
+        """Query trees per acre with optional grouping and filtering."""
         results = []
 
         for state in states:
             state = state.upper()
 
             with self._get_fia_connection(state) as db:
-                kwargs = {"tree_domain": tree_domain}
+                kwargs = {
+                    "land_type": land_type,
+                    "tree_type": tree_type,
+                }
+
                 if by_species:
-                    kwargs["grp_by"] = "SPCD"
+                    kwargs["by_species"] = True
+                if by_size_class:
+                    kwargs["by_size_class"] = True
+                if tree_domain:
+                    kwargs["tree_domain"] = tree_domain
 
                 # Use db.tpa() method which handles MotherDuck type compatibility
                 result_df = db.tpa(**kwargs)
-                df = result_df.to_pandas() if hasattr(result_df, "to_pandas") else result_df
+                df = (
+                    result_df.to_pandas()
+                    if hasattr(result_df, "to_pandas")
+                    else result_df
+                )
                 df["STATE"] = state
                 results.append(df)
 
         combined = pd.concat(results, ignore_index=True)
 
+        est_col = _get_estimate_column(combined, "tpa")
+        se_col = _get_se_percent_column(combined, "tpa")
+
+        total_tpa = float(combined[est_col].sum())
+        se_pct = float(combined[se_col].mean()) if se_col else 0.0
+
         return {
             "states": states,
+            "land_type": land_type,
+            "tree_type": tree_type,
             "tree_domain": tree_domain,
-            "results": combined.to_dict("records"),
+            "total_tpa": total_tpa,
+            "se_percent": se_pct,
+            "by_species": combined.to_dict("records") if by_species else None,
+            "by_size_class": combined.to_dict("records") if by_size_class else None,
+            "source": "USDA Forest Service FIA (pyFIA validated)",
+        }
+
+    async def query_mortality(
+        self,
+        states: list[str],
+        by_species: bool = False,
+        tree_domain: str | None = None,
+    ) -> dict:
+        """Query annual tree mortality across states."""
+        results = []
+        missing_grm_states = []
+
+        for state in states:
+            state = state.upper()
+
+            with self._get_fia_connection(state) as db:
+                # Check if required GRM tables exist
+                required_tables = ["TREE_GRM_COMPONENT", "TREE_GRM_MIDPT"]
+
+                missing_tables = []
+                for table in required_tables:
+                    if hasattr(db._reader._backend, "table_exists"):
+                        if not db._reader._backend.table_exists(table):
+                            missing_tables.append(table)
+                    else:
+                        try:
+                            if table not in db.tables:
+                                db.load_table(table)
+                        except Exception:
+                            missing_tables.append(table)
+
+                if missing_tables:
+                    logger.warning(
+                        f"State {state} is missing GRM tables: {missing_tables}. "
+                        "Mortality data not available."
+                    )
+                    missing_grm_states.append(state)
+                    continue
+
+                kwargs = {"measure": "volume", "variance": True}
+                if by_species:
+                    kwargs["grp_by"] = "SPCD"
+                if tree_domain:
+                    kwargs["tree_domain"] = tree_domain
+
+                try:
+                    # Use db.mortality() method which handles MotherDuck type compatibility
+                    result_df = db.mortality(**kwargs)
+                    df = (
+                        result_df.to_pandas()
+                        if hasattr(result_df, "to_pandas")
+                        else result_df
+                    )
+                    df["STATE"] = state
+                    results.append(df)
+                except Exception as e:
+                    logger.error(f"Error querying mortality for {state}: {e}")
+                    missing_grm_states.append(state)
+                    continue
+
+        # If no states had GRM data, return error response
+        if not results:
+            return {
+                "error": (
+                    f"Mortality data is not available for the requested state(s): {states}. "
+                    "Mortality estimation requires GRM tables (TREE_GRM_COMPONENT, TREE_GRM_MIDPT) "
+                    "which are not available in all FIA databases."
+                ),
+                "states": states,
+                "missing_grm_states": missing_grm_states,
+                "available_metrics": ["area", "volume", "biomass", "tpa"],
+                "source": "USDA Forest Service FIA (pyFIA)",
+            }
+
+        combined = pd.concat(results, ignore_index=True)
+
+        # Mortality returns MORT_TOTAL and MORT_ACRE columns
+        total_mortality = (
+            float(combined["MORT_TOTAL"].sum())
+            if "MORT_TOTAL" in combined.columns
+            else 0.0
+        )
+
+        # Get SE if available
+        se_col = None
+        if "MORT_TOTAL_SE" in combined.columns:
+            se_col = "MORT_TOTAL_SE"
+
+        if se_col:
+            # Calculate SE as percentage of total
+            total_se = float(combined[se_col].sum())
+            se_pct = (total_se / total_mortality * 100) if total_mortality > 0 else 0.0
+        else:
+            se_pct = 0.0
+
+        result = {
+            "states": states,
+            "total_mortality_cuft": total_mortality,
+            "total_mortality_million_cuft": total_mortality / 1e6,
+            "se_percent": se_pct,
+            "by_species": combined.to_dict("records") if by_species else None,
+            "source": "USDA Forest Service FIA (pyFIA validated)",
+        }
+
+        # Add warning if some states were missing GRM data
+        if missing_grm_states:
+            result["warning"] = (
+                f"Mortality data not available for: {', '.join(missing_grm_states)}. "
+                "Results only include states with GRM tables."
+            )
+            result["states_with_data"] = [
+                s for s in states if s not in missing_grm_states
+            ]
+
+        return result
+
+    async def query_removals(
+        self,
+        states: list[str],
+        by_species: bool = False,
+        tree_domain: str | None = None,
+    ) -> dict:
+        """Query timber removals (harvest) across states."""
+        results = []
+
+        for state in states:
+            state = state.upper()
+
+            with self._get_fia_connection(state) as db:
+                kwargs = {"measure": "volume", "variance": True}
+                if by_species:
+                    kwargs["grp_by"] = "SPCD"
+                if tree_domain:
+                    kwargs["tree_domain"] = tree_domain
+
+                # Use db.removals() method which handles MotherDuck type compatibility
+                result_df = db.removals(**kwargs)
+                df = (
+                    result_df.to_pandas()
+                    if hasattr(result_df, "to_pandas")
+                    else result_df
+                )
+                df["STATE"] = state
+                results.append(df)
+
+        combined = pd.concat(results, ignore_index=True)
+
+        # Removals returns REMOVALS_TOTAL and REMOVALS_PER_ACRE columns
+        total_removals = (
+            float(combined["REMOVALS_TOTAL"].sum())
+            if "REMOVALS_TOTAL" in combined.columns
+            else 0.0
+        )
+
+        # Get SE if available
+        se_col = None
+        if "REMOVALS_TOTAL_SE" in combined.columns:
+            se_col = "REMOVALS_TOTAL_SE"
+
+        if se_col:
+            # Calculate SE as percentage of total
+            total_se = float(combined[se_col].sum())
+            se_pct = (total_se / total_removals * 100) if total_removals > 0 else 0.0
+        else:
+            se_pct = 0.0
+
+        return {
+            "states": states,
+            "total_removals_cuft": total_removals,
+            "total_removals_million_cuft": total_removals / 1e6,
+            "se_percent": se_pct,
+            "by_species": combined.to_dict("records") if by_species else None,
+            "source": "USDA Forest Service FIA (pyFIA validated)",
+        }
+
+    async def query_growth(
+        self,
+        states: list[str],
+        by_species: bool = False,
+        tree_domain: str | None = None,
+        measure: str = "volume",
+        land_type: str = "forest",
+    ) -> dict:
+        """Query annual growth across states."""
+        results = []
+        missing_grm_states = []
+
+        for state in states:
+            state = state.upper()
+
+            with self._get_fia_connection(state) as db:
+                # Check if required GRM tables exist
+                # Growth requires: TREE_GRM_COMPONENT, TREE_GRM_MIDPT, TREE_GRM_BEGIN, BEGINEND
+                required_tables = [
+                    "TREE_GRM_COMPONENT",
+                    "TREE_GRM_MIDPT",
+                    "TREE_GRM_BEGIN",
+                    "BEGINEND",
+                ]
+
+                missing_tables = []
+                for table in required_tables:
+                    if hasattr(db._reader._backend, "table_exists"):
+                        if not db._reader._backend.table_exists(table):
+                            missing_tables.append(table)
+                    else:
+                        # Fallback: try to load table and catch error
+                        try:
+                            if table not in db.tables:
+                                db.load_table(table)
+                        except Exception:
+                            missing_tables.append(table)
+
+                if missing_tables:
+                    logger.warning(
+                        f"State {state} is missing GRM tables: {missing_tables}. "
+                        "Growth data not available."
+                    )
+                    missing_grm_states.append(state)
+                    continue
+
+                kwargs = {
+                    "land_type": land_type,
+                    "measure": measure,
+                    "variance": True,
+                }
+                if by_species:
+                    kwargs["grp_by"] = "SPCD"
+                if tree_domain:
+                    kwargs["tree_domain"] = tree_domain
+
+                try:
+                    # Use db.growth() method which handles MotherDuck type compatibility
+                    result_df = db.growth(**kwargs)
+                    df = (
+                        result_df.to_pandas()
+                        if hasattr(result_df, "to_pandas")
+                        else result_df
+                    )
+                    df["STATE"] = state
+                    results.append(df)
+                except Exception as e:
+                    logger.error(f"Error querying growth for {state}: {e}")
+                    missing_grm_states.append(state)
+                    continue
+
+        # If no states had GRM data, return error response
+        if not results:
+            error_msg = (
+                f"Growth data is not available for the requested state(s): {states}. "
+                "Growth estimation requires GRM (Growth-Removal-Mortality) tables "
+                "(TREE_GRM_COMPONENT, TREE_GRM_MIDPT, TREE_GRM_BEGIN, BEGINEND) "
+                "which are not available in all FIA databases."
+            )
+            if missing_grm_states:
+                error_msg += f" Missing GRM data for: {', '.join(missing_grm_states)}"
+
+            return {
+                "error": error_msg,
+                "states": states,
+                "missing_grm_states": missing_grm_states,
+                "available_metrics": [
+                    "area",
+                    "volume",
+                    "biomass",
+                    "tpa",
+                    "mortality",
+                    "removals",
+                ],
+                "source": "USDA Forest Service FIA (pyFIA)",
+            }
+
+        combined = pd.concat(results, ignore_index=True)
+
+        # Growth estimator returns GROWTH_TOTAL and GROWTH_ACRE columns
+        total_growth = (
+            float(combined["GROWTH_TOTAL"].sum())
+            if "GROWTH_TOTAL" in combined.columns
+            else 0.0
+        )
+
+        # Get SE if available
+        se_col = None
+        if "GROWTH_TOTAL_SE" in combined.columns:
+            se_col = "GROWTH_TOTAL_SE"
+
+        if se_col:
+            # Calculate SE as percentage of total
+            total_se = float(combined[se_col].sum())
+            se_pct = (total_se / total_growth * 100) if total_growth > 0 else 0.0
+        else:
+            se_pct = 0.0
+
+        # Build base response with optional warning about missing states
+        base_response = {
+            "states": states,
+            "measure": measure,
+            "land_type": land_type,
+            "se_percent": se_pct,
+            "by_species": combined.to_dict("records") if by_species else None,
+            "source": "USDA Forest Service FIA (pyFIA validated)",
+        }
+
+        # Add warning if some states were missing GRM data
+        if missing_grm_states:
+            base_response["warning"] = (
+                f"Growth data not available for: {', '.join(missing_grm_states)}. "
+                "Results only include states with GRM tables."
+            )
+            base_response["states_with_data"] = [
+                s for s in states if s not in missing_grm_states
+            ]
+
+        # Format response based on measure type
+        if measure == "volume":
+            return {
+                **base_response,
+                "total_growth_cuft": total_growth,
+                "total_growth_million_cuft": total_growth / 1e6,
+            }
+        elif measure == "biomass":
+            return {
+                **base_response,
+                "total_growth_tons": total_growth,
+                "total_growth_million_tons": total_growth / 1e6,
+            }
+        else:  # count
+            return {
+                **base_response,
+                "total_growth_trees": total_growth,
+            }
+
+    async def query_area_change(
+        self,
+        states: list[str],
+        land_type: str = "forest",
+        change_type: str = "net",
+        grp_by: str | None = None,
+    ) -> dict:
+        """Query forest area change across states."""
+        results = []
+
+        for state in states:
+            state = state.upper()
+
+            with self._get_fia_connection(state) as db:
+                kwargs = {
+                    "land_type": land_type,
+                    "change_type": change_type,
+                    "annual": True,
+                    "variance": True,
+                }
+                if grp_by:
+                    kwargs["grp_by"] = grp_by
+
+                # Use db.area_change() method which handles MotherDuck type compatibility
+                result_df = db.area_change(**kwargs)
+                df = (
+                    result_df.to_pandas()
+                    if hasattr(result_df, "to_pandas")
+                    else result_df
+                )
+                df["STATE"] = state
+                results.append(df)
+
+        combined = pd.concat(results, ignore_index=True)
+
+        # Area change returns AREA_CHANGE_TOTAL column
+        total_change = (
+            float(combined["AREA_CHANGE_TOTAL"].sum())
+            if "AREA_CHANGE_TOTAL" in combined.columns
+            else 0.0
+        )
+
+        # Get SE if available
+        se_col = None
+        if "SE" in combined.columns:
+            se_col = "SE"
+
+        if se_col:
+            # Calculate SE as percentage of total (absolute value for division)
+            total_se = float(combined[se_col].sum())
+            se_pct = (total_se / abs(total_change) * 100) if total_change != 0 else 0.0
+        else:
+            se_pct = 0.0
+
+        return {
+            "states": states,
+            "land_type": land_type,
+            "change_type": change_type,
+            "total_area_change_acres_per_year": total_change,
+            "se_percent": se_pct,
+            "breakdown": combined.to_dict("records") if grp_by else None,
+            "source": "USDA Forest Service FIA (pyFIA validated)",
+        }
+
+    async def query_by_stand_size(
+        self,
+        states: list[str],
+        metric: str = "area",
+        land_type: str = "forest",
+        tree_domain: str | None = None,
+    ) -> dict:
+        """Query forest metrics grouped by stand size class.
+
+        Args:
+            states: List of state codes (e.g., ['NC', 'GA'])
+            metric: Metric to query - 'area', 'volume', 'biomass', or 'tpa'
+            land_type: Land type - 'forest', 'timber', or 'reserved'
+            tree_domain: Optional tree filter (e.g., 'DIA >= 10.0')
+
+        Returns:
+            Dictionary with results grouped by stand size class
+        """
+        valid_metrics = ["area", "volume", "biomass", "tpa"]
+        if metric not in valid_metrics:
+            raise ValueError(f"Unknown metric: {metric}. Available: {valid_metrics}")
+
+        results = []
+
+        for state in states:
+            state = state.upper()
+
+            with self._get_fia_connection(state) as db:
+                kwargs = {"grp_by": "STDSZCD", "variance": True}
+
+                # Add metric-specific parameters
+                if metric in ("area", "biomass", "tpa"):
+                    kwargs["land_type"] = land_type
+                if metric in ("volume", "biomass", "tpa") and tree_domain:
+                    kwargs["tree_domain"] = tree_domain
+
+                # Use db methods which handle MotherDuck type compatibility
+                if metric == "area":
+                    result_df = db.area(**kwargs)
+                elif metric == "volume":
+                    result_df = db.volume(**kwargs)
+                elif metric == "biomass":
+                    result_df = db.biomass(**kwargs)
+                elif metric == "tpa":
+                    result_df = db.tpa(**kwargs)
+                else:
+                    raise ValueError(f"Unknown metric: {metric}")
+
+                df = (
+                    result_df.to_pandas()
+                    if hasattr(result_df, "to_pandas")
+                    else result_df
+                )
+                df["STATE"] = state
+                results.append(df)
+
+        combined = pd.concat(results, ignore_index=True)
+
+        # Get estimate and SE columns
+        est_col = _get_estimate_column(combined, metric)
+        se_col = _get_se_percent_column(combined, metric)
+
+        # Calculate total
+        total_estimate = float(combined[est_col].sum())
+
+        # Calculate SE percent - handle different SE column formats
+        if se_col and se_col in combined.columns:
+            # If we have SE_PERCENT column, use it
+            if "PERCENT" in se_col.upper():
+                se_pct = float(combined[se_col].mean(skipna=True))
+            else:
+                # If we have absolute SE (e.g., AREA_SE), calculate percent
+                # SE percent = (SE / estimate) * 100
+                # Filter out NaN values before summing
+                se_values = combined[se_col].dropna()
+                total_se = float(se_values.sum()) if len(se_values) > 0 else 0.0
+                se_pct = (
+                    (total_se / total_estimate * 100) if total_estimate > 0 else 0.0
+                )
+        else:
+            se_pct = 0.0
+
+        return {
+            "states": states,
+            "metric": metric,
+            "land_type": land_type,
+            "tree_domain": tree_domain,
+            "total_estimate": total_estimate,
+            "se_percent": se_pct,
+            "by_stand_size": combined.to_dict("records"),
+            "source": "USDA Forest Service FIA (pyFIA validated)",
+        }
+
+    async def query_by_forest_type(
+        self,
+        states: list[str],
+        metric: str = "area",
+        land_type: str = "forest",
+        tree_domain: str | None = None,
+    ) -> dict:
+        """Query forest metrics grouped by forest type.
+
+        Args:
+            states: List of state codes (e.g., ['NC', 'GA'])
+            metric: Metric to query - 'area', 'volume', or 'biomass'
+            land_type: Land type - 'forest', 'timber', or 'reserved'
+            tree_domain: Optional tree filter (e.g., 'DIA >= 10.0')
+
+        Returns:
+            Dictionary with results grouped by forest type with human-readable names
+        """
+        valid_metrics = ["area", "volume", "biomass"]
+        if metric not in valid_metrics:
+            raise ValueError(f"Unknown metric: {metric}. Available: {valid_metrics}")
+
+        results = []
+
+        for state in states:
+            state = state.upper()
+
+            with self._get_fia_connection(state) as db:
+                kwargs = {"grp_by": "FORTYPCD", "variance": True}
+
+                # Add metric-specific parameters
+                if metric in ("area", "biomass"):
+                    kwargs["land_type"] = land_type
+                if metric in ("volume", "biomass") and tree_domain:
+                    kwargs["tree_domain"] = tree_domain
+
+                # Use db methods which handle MotherDuck type compatibility
+                if metric == "area":
+                    result_df = db.area(**kwargs)
+                elif metric == "volume":
+                    result_df = db.volume(**kwargs)
+                elif metric == "biomass":
+                    result_df = db.biomass(**kwargs)
+                else:
+                    raise ValueError(f"Unknown metric: {metric}")
+
+                df = (
+                    result_df.to_pandas()
+                    if hasattr(result_df, "to_pandas")
+                    else result_df
+                )
+                df["STATE"] = state
+                results.append(df)
+
+        combined = pd.concat(results, ignore_index=True)
+
+        # Get forest type names from the database
+        # Use the first state's database to get reference table
+        with self._get_fia_connection(states[0]) as db:
+            import polars as pl
+            from pyfia.utils.reference_tables import join_forest_type_names
+
+            # Convert to polars for reference table join
+            combined_pl = pl.from_pandas(combined)
+            combined_pl = join_forest_type_names(combined_pl, db)
+            combined = combined_pl.to_pandas()
+
+        # Get estimate and SE columns
+        est_col = _get_estimate_column(combined, metric)
+        se_col = _get_se_percent_column(combined, metric)
+
+        # Aggregate by forest type across states
+        if "FOREST_TYPE_NAME" in combined.columns:
+            grouped = (
+                combined.groupby(["FORTYPCD", "FOREST_TYPE_NAME"], dropna=False)
+                .agg(
+                    {
+                        est_col: "sum",
+                        se_col: "mean" if se_col else lambda x: 0.0,
+                    }
+                )
+                .reset_index()
+            )
+        else:
+            # Fallback if reference table join failed
+            grouped = (
+                combined.groupby(["FORTYPCD"], dropna=False)
+                .agg(
+                    {
+                        est_col: "sum",
+                        se_col: "mean" if se_col else lambda x: 0.0,
+                    }
+                )
+                .reset_index()
+            )
+            grouped["FOREST_TYPE_NAME"] = "Unknown"
+
+        total_estimate = float(grouped[est_col].sum())
+        overall_se = float(grouped[se_col].mean()) if se_col else 0.0
+
+        # Sort by estimate descending
+        grouped = grouped.sort_values(est_col, ascending=False)
+
+        # Format breakdown
+        breakdown = []
+        for _, row in grouped.iterrows():
+            breakdown.append(
+                {
+                    "FORTYPCD": int(row["FORTYPCD"])
+                    if pd.notna(row["FORTYPCD"])
+                    else None,
+                    "FOREST_TYPE_NAME": row["FOREST_TYPE_NAME"]
+                    if pd.notna(row.get("FOREST_TYPE_NAME"))
+                    else "Unknown",
+                    "ESTIMATE": float(row[est_col]),
+                    "SE_PERCENT": float(row[se_col]) if se_col else 0.0,
+                }
+            )
+
+        return {
+            "states": states,
+            "metric": metric,
+            "land_type": land_type,
+            "tree_domain": tree_domain,
+            "total_estimate": total_estimate,
+            "se_percent": overall_se,
+            "breakdown": breakdown,
             "source": "USDA Forest Service FIA (pyFIA validated)",
         }
 
@@ -365,7 +1063,7 @@ class FIAService:
         land_type: str = "forest",
     ) -> dict:
         """Compare a metric across states."""
-        valid_metrics = ["area", "volume", "biomass", "tpa"]
+        valid_metrics = ["area", "volume", "biomass", "tpa", "mortality", "growth"]
 
         if metric not in valid_metrics:
             raise ValueError(f"Unknown metric: {metric}. Available: {valid_metrics}")
@@ -378,8 +1076,10 @@ class FIAService:
                 with self._get_fia_connection(state) as db:
                     # Build kwargs based on metric
                     kwargs = {}
-                    if metric in ("area", "biomass"):
+                    if metric in ("area", "biomass", "growth"):
                         kwargs["land_type"] = land_type
+                    if metric in ("mortality", "growth"):
+                        kwargs["variance"] = True
 
                     # Use db methods which handle MotherDuck type compatibility
                     if metric == "area":
@@ -390,28 +1090,40 @@ class FIAService:
                         result_df = db.biomass(**kwargs)
                     elif metric == "tpa":
                         result_df = db.tpa(**kwargs)
+                    elif metric == "mortality":
+                        result_df = db.mortality(**kwargs)
+                    elif metric == "growth":
+                        result_df = db.growth(**kwargs)
                     else:
                         raise ValueError(f"Unknown metric: {metric}")
 
-                    df = result_df.to_pandas() if hasattr(result_df, "to_pandas") else result_df
+                    df = (
+                        result_df.to_pandas()
+                        if hasattr(result_df, "to_pandas")
+                        else result_df
+                    )
 
                     est_col = _get_estimate_column(df, metric)
                     se_col = _get_se_percent_column(df, metric)
 
-                    results.append({
-                        "state": state,
-                        "estimate": float(df[est_col].sum()),
-                        "se_percent": float(df[se_col].mean()) if se_col else None,
-                        "error": None,
-                    })
+                    results.append(
+                        {
+                            "state": state,
+                            "estimate": float(df[est_col].sum()),
+                            "se_percent": float(df[se_col].mean()) if se_col else None,
+                            "error": None,
+                        }
+                    )
             except Exception as e:
                 logger.error(f"Error querying {state}: {e}")
-                results.append({
-                    "state": state,
-                    "estimate": None,
-                    "se_percent": None,
-                    "error": str(e),
-                })
+                results.append(
+                    {
+                        "state": state,
+                        "estimate": None,
+                        "se_percent": None,
+                        "error": str(e),
+                    }
+                )
 
         # Sort by estimate descending
         results.sort(key=lambda x: x.get("estimate") or 0, reverse=True)
@@ -422,6 +1134,472 @@ class FIAService:
             "source": "USDA Forest Service FIA (pyFIA validated)",
         }
 
+    async def query_by_ownership(
+        self,
+        states: list[str],
+        metric: str = "area",
+        land_type: str = "forest",
+        tree_domain: str | None = None,
+    ) -> dict:
+        """Query forest metrics grouped by ownership.
 
-# Singleton instance
+        Args:
+            states: List of two-letter state codes
+            metric: Metric to query (area, volume, biomass, tpa)
+            land_type: Land type filter (forest, timber)
+            tree_domain: Optional tree filter (e.g., 'DIA >= 10.0')
+
+        Returns:
+            Dictionary with ownership breakdown and human-readable names
+        """
+        valid_metrics = ["area", "volume", "biomass", "tpa"]
+        if metric not in valid_metrics:
+            raise ValueError(f"Unknown metric: {metric}. Available: {valid_metrics}")
+
+        # Ownership code to name mapping (matching pyFIA conventions)
+        ownership_names = {
+            10: "Forest Service",
+            20: "Other Federal",
+            30: "State and Local Government",
+            40: "Private",
+        }
+
+        results = []
+
+        for state in states:
+            state = state.upper()
+
+            with self._get_fia_connection(state) as db:
+                # Build kwargs based on metric
+                kwargs = {"grp_by": "OWNGRPCD"}
+
+                if metric in ("area", "biomass"):
+                    kwargs["land_type"] = land_type
+                if metric in ("volume", "tpa") and tree_domain:
+                    kwargs["tree_domain"] = tree_domain
+
+                # Execute the appropriate query
+                if metric == "area":
+                    result_df = db.area(**kwargs)
+                elif metric == "volume":
+                    result_df = db.volume(**kwargs)
+                elif metric == "biomass":
+                    result_df = db.biomass(variance=True, **kwargs)
+                elif metric == "tpa":
+                    result_df = db.tpa(**kwargs)
+
+                df = (
+                    result_df.to_pandas()
+                    if hasattr(result_df, "to_pandas")
+                    else result_df
+                )
+                df["STATE"] = state
+                results.append(df)
+
+        # Combine all states
+        combined = pd.concat(results, ignore_index=True)
+
+        # Filter out rows with null/NaN ownership codes before processing
+        # Some plots may have missing ownership data which causes NaN conversion errors
+        combined = combined[combined["OWNGRPCD"].notna()]
+
+        # Get estimate column dynamically
+        est_col = _get_estimate_column(combined, metric)
+        se_col = _get_se_percent_column(combined, metric)
+
+        # Group by ownership and aggregate
+        ownership_breakdown = []
+        for owngrpcd in sorted(combined["OWNGRPCD"].unique()):
+            subset = combined[combined["OWNGRPCD"] == owngrpcd]
+            estimate = float(subset[est_col].sum())
+            se_pct = float(subset[se_col].mean()) if se_col else 0.0
+
+            ownership_breakdown.append(
+                {
+                    "OWNGRPCD": int(owngrpcd),
+                    "ownership_name": ownership_names.get(
+                        int(owngrpcd), f"Code {owngrpcd}"
+                    ),
+                    "estimate": estimate,
+                    "se_percent": se_pct,
+                }
+            )
+
+        # Sort by estimate descending
+        ownership_breakdown.sort(key=lambda x: x["estimate"], reverse=True)
+
+        # Calculate totals
+        total_estimate = sum(row["estimate"] for row in ownership_breakdown)
+
+        return {
+            "states": states,
+            "metric": metric,
+            "land_type": land_type if metric in ("area", "biomass") else None,
+            "tree_domain": tree_domain,
+            "total_estimate": total_estimate,
+            "ownership_breakdown": ownership_breakdown,
+            "source": "USDA Forest Service FIA (pyFIA validated)",
+        }
+
+    # Singleton instance
+
+    async def query_by_county(
+        self,
+        state: str,
+        county_fips: int,
+        metric: str = "area",
+        land_type: str = "forest",
+        by_species: bool = False,
+        tree_domain: str | None = None,
+    ) -> dict:
+        """Query forest metrics by county.
+
+        Args:
+            state: Two-letter state code
+            county_fips: County FIPS code (3-digit)
+            metric: Metric to query (area, volume, biomass, tpa)
+            land_type: Land type filter (forest, timber)
+            by_species: Group results by species (volume, biomass, tpa only)
+            tree_domain: Tree-level filter expression (volume, tpa only)
+
+        Returns:
+            Dictionary with metric results filtered to the specified county
+        """
+        state = state.upper()
+        valid_metrics = ["area", "volume", "biomass", "tpa"]
+
+        if metric not in valid_metrics:
+            raise ValueError(f"Unknown metric: {metric}. Available: {valid_metrics}")
+
+        with self._get_fia_connection(state) as db:
+            # Build area_domain filter for county
+            # COUNTYCD is stored in PLOT table and can be used with area_domain
+            area_domain = f"COUNTYCD == {county_fips}"
+
+            # Build kwargs based on metric
+            kwargs = {}
+            if metric in ("area", "biomass", "tpa"):
+                kwargs["land_type"] = land_type
+
+            if metric == "area":
+                kwargs["area_domain"] = area_domain
+            elif metric == "volume":
+                # Volume uses area_domain for plot-level filtering
+                kwargs["area_domain"] = area_domain
+                if by_species:
+                    kwargs["grp_by"] = "SPCD"
+                if tree_domain:
+                    kwargs["tree_domain"] = tree_domain
+            elif metric == "biomass":
+                kwargs["area_domain"] = area_domain
+                if by_species:
+                    kwargs["grp_by"] = "SPCD"
+                kwargs["variance"] = True
+            elif metric == "tpa":
+                kwargs["area_domain"] = area_domain
+                if by_species:
+                    kwargs["by_species"] = True
+                if tree_domain:
+                    kwargs["tree_domain"] = tree_domain
+
+            # Execute query
+            if metric == "area":
+                result_df = db.area(**kwargs)
+            elif metric == "volume":
+                result_df = db.volume(**kwargs)
+            elif metric == "biomass":
+                result_df = db.biomass(**kwargs)
+            elif metric == "tpa":
+                result_df = db.tpa(**kwargs)
+            else:
+                raise ValueError(f"Unknown metric: {metric}")
+
+            df = result_df.to_pandas() if hasattr(result_df, "to_pandas") else result_df
+
+            # Get estimate and SE columns
+            est_col = _get_estimate_column(df, metric)
+            se_col = _get_se_percent_column(df, metric)
+
+            # Format response based on metric
+            if metric == "area":
+                total_area = float(df[est_col].sum())
+                se_pct = float(df[se_col].mean()) if se_col else 0.0
+                return {
+                    "state": state,
+                    "county_fips": county_fips,
+                    "metric": metric,
+                    "land_type": land_type,
+                    "total_area_acres": total_area,
+                    "se_percent": se_pct,
+                    "source": "USDA Forest Service FIA (pyFIA validated)",
+                }
+            elif metric == "volume":
+                total_vol = float(df[est_col].sum())
+                se_pct = float(df[se_col].mean()) if se_col else 0.0
+                return {
+                    "state": state,
+                    "county_fips": county_fips,
+                    "metric": metric,
+                    "total_volume_cuft": total_vol,
+                    "total_volume_billion_cuft": total_vol / 1e9,
+                    "se_percent": se_pct,
+                    "by_species": df.to_dict("records") if by_species else None,
+                    "source": "USDA Forest Service FIA (pyFIA validated)",
+                }
+            elif metric == "biomass":
+                total_biomass = (
+                    float(df["BIO_TOTAL"].sum()) if "BIO_TOTAL" in df.columns else 0.0
+                )
+                total_carbon = (
+                    float(df["CARB_TOTAL"].sum())
+                    if "CARB_TOTAL" in df.columns
+                    else total_biomass * 0.47
+                )
+                se_pct = float(df[se_col].mean()) if se_col else 0.0
+                return {
+                    "state": state,
+                    "county_fips": county_fips,
+                    "metric": metric,
+                    "land_type": land_type,
+                    "total_biomass_tons": total_biomass,
+                    "carbon_mmt": total_carbon / 1e6,
+                    "se_percent": se_pct,
+                    "by_species": df.to_dict("records") if by_species else None,
+                    "source": "USDA Forest Service FIA (pyFIA validated)",
+                }
+            elif metric == "tpa":
+                total_tpa = float(df[est_col].sum())
+                se_pct = float(df[se_col].mean()) if se_col else 0.0
+                return {
+                    "state": state,
+                    "county_fips": county_fips,
+                    "metric": metric,
+                    "land_type": land_type,
+                    "total_tpa": total_tpa,
+                    "se_percent": se_pct,
+                    "by_species": df.to_dict("records") if by_species else None,
+                    "source": "USDA Forest Service FIA (pyFIA validated)",
+                }
+            else:
+                raise ValueError(f"Unknown metric: {metric}")
+
+    async def lookup_species(
+        self,
+        spcd: int | None = None,
+        common_name: str | None = None,
+        state: str | None = None,
+        limit: int = 10,
+    ) -> dict:
+        """
+        Lookup species information from FIA REF_SPECIES table.
+
+        This method provides three main use cases:
+        1. Convert species code (SPCD) to common/scientific names
+        2. Search for species by common name to get codes
+        3. List top species by volume in a given state
+
+        Parameters
+        ----------
+        spcd : int, optional
+            Species code to lookup (e.g., 316 for loblolly pine)
+        common_name : str, optional
+            Common name to search for (case-insensitive, partial match)
+        state : str, optional
+            State code to get top species for (e.g., 'NC', 'GA')
+        limit : int, default 10
+            Maximum number of results to return for searches
+
+        Returns
+        -------
+        dict
+            Species information including SPCD, common name, scientific name,
+            and optionally volume data for state queries
+        """
+        # Use any state for reference table access (REF_SPECIES is state-independent)
+        reference_state = state.upper() if state else "NC"
+
+        try:
+            with self._get_fia_connection(reference_state) as db:
+                # Query REF_SPECIES directly using SQL to avoid schema lookup issues
+                # MotherDuck databases include REF_SPECIES as a view
+                query = """
+                    SELECT SPCD, COMMON_NAME, SCIENTIFIC_NAME, GENUS, SPECIES
+                    FROM REF_SPECIES
+                """
+
+                try:
+                    # Use the underlying connection from the FIA object
+                    species_df = db._reader._backend._connection.execute(query).pl()
+                except Exception as e:
+                    # If REF_SPECIES doesn't exist, return empty results
+                    logger.warning(f"Could not access REF_SPECIES table: {e}")
+                    # Return hardcoded common species as fallback
+                    species_data = {
+                        "SPCD": [316, 131, 318, 110, 121, 129, 802, 833, 531, 693],
+                        "COMMON_NAME": [
+                            "loblolly pine",
+                            "slash pine",
+                            "longleaf pine",
+                            "shortleaf pine",
+                            "white oak",
+                            "northern red oak",
+                            "yellow-poplar",
+                            "sweetgum",
+                            "red maple",
+                            "black oak",
+                        ],
+                        "SCIENTIFIC_NAME": [
+                            "Pinus taeda",
+                            "Pinus elliottii",
+                            "Pinus palustris",
+                            "Pinus echinata",
+                            "Quercus alba",
+                            "Quercus rubra",
+                            "Liriodendron tulipifera",
+                            "Liquidambar styraciflua",
+                            "Acer rubrum",
+                            "Quercus velutina",
+                        ],
+                        "GENUS": ["Pinus"] * 4 + ["Quercus"] * 4 + ["Acer"] + ["Quercus"],
+                        "SPECIES": ["taeda", "elliottii", "palustris", "echinata",
+                                   "alba", "rubra", None, "styraciflua", "rubrum", "velutina"],
+                    }
+                    import polars as pl
+                    species_df = pl.DataFrame(species_data)
+
+                # Convert to pandas for easier manipulation
+                if hasattr(species_df, "collect"):
+                    species_df = species_df.collect()
+                species_pd = (
+                    species_df.to_pandas()
+                    if hasattr(species_df, "to_pandas")
+                    else species_df
+                )
+
+                # Case 1: Lookup by species code
+                if spcd is not None:
+                    matches = species_pd[species_pd["SPCD"] == spcd]
+                    if len(matches) == 0:
+                        return {
+                            "mode": "lookup_by_code",
+                            "spcd": spcd,
+                            "found": False,
+                            "message": f"No species found with code {spcd}",
+                        }
+
+                    species_info = matches.iloc[0]
+                    return {
+                        "mode": "lookup_by_code",
+                        "spcd": int(species_info["SPCD"]),
+                        "common_name": str(species_info["COMMON_NAME"]),
+                        "scientific_name": str(species_info["SCIENTIFIC_NAME"]),
+                        "genus": str(species_info["GENUS"])
+                        if pd.notna(species_info["GENUS"])
+                        else None,
+                        "species": str(species_info["SPECIES"])
+                        if pd.notna(species_info["SPECIES"])
+                        else None,
+                        "found": True,
+                    }
+
+                # Case 2: Search by common name
+                if common_name is not None:
+                    search_term = common_name.lower()
+                    matches = species_pd[
+                        species_pd["COMMON_NAME"]
+                        .str.lower()
+                        .str.contains(search_term, na=False)
+                    ]
+
+                    if len(matches) == 0:
+                        return {
+                            "mode": "search_by_name",
+                            "search_term": common_name,
+                            "found": False,
+                            "count": 0,
+                            "results": [],
+                            "message": f"No species found matching '{common_name}'",
+                        }
+
+                    # Limit results
+                    matches = matches.head(limit)
+
+                    results = []
+                    for _, row in matches.iterrows():
+                        results.append(
+                            {
+                                "spcd": int(row["SPCD"]),
+                                "common_name": str(row["COMMON_NAME"]),
+                                "scientific_name": str(row["SCIENTIFIC_NAME"]),
+                            }
+                        )
+
+                    return {
+                        "mode": "search_by_name",
+                        "search_term": common_name,
+                        "found": True,
+                        "count": len(results),
+                        "results": results,
+                    }
+
+                # Case 3: List top species by volume in a state
+                if state is not None:
+                    # Query volume by species for the state
+                    volume_df = db.volume(grp_by="SPCD")
+                    vol_pd = (
+                        volume_df.to_pandas()
+                        if hasattr(volume_df, "to_pandas")
+                        else volume_df
+                    )
+
+                    # Get estimate column
+                    vol_col = _get_estimate_column(vol_pd, "volume")
+
+                    # Sort by volume and take top N
+                    top_species = vol_pd.nlargest(limit, vol_col)
+
+                    # Join with species names
+                    top_with_names = top_species.merge(
+                        species_pd[["SPCD", "COMMON_NAME", "SCIENTIFIC_NAME"]],
+                        on="SPCD",
+                        how="left",
+                    )
+
+                    results = []
+                    for _, row in top_with_names.iterrows():
+                        results.append(
+                            {
+                                "spcd": int(row["SPCD"]),
+                                "common_name": str(row["COMMON_NAME"])
+                                if pd.notna(row.get("COMMON_NAME"))
+                                else f"Unknown (SPCD {int(row['SPCD'])})",
+                                "scientific_name": str(row["SCIENTIFIC_NAME"])
+                                if pd.notna(row.get("SCIENTIFIC_NAME"))
+                                else None,
+                                "volume_cuft": float(row[vol_col]),
+                            }
+                        )
+
+                    return {
+                        "mode": "top_species_by_state",
+                        "state": state.upper(),
+                        "count": len(results),
+                        "results": results,
+                    }
+
+                # No valid parameters provided
+                return {
+                    "error": "Must provide spcd, common_name, or state parameter",
+                }
+
+        except Exception as e:
+            logger.error(f"Error in lookup_species: {e}", exc_info=True)
+            return {
+                "error": str(e),
+                "spcd": spcd,
+                "common_name": common_name,
+                "state": state,
+            }
+
+
 fia_service = FIAService()
