@@ -10,8 +10,8 @@ import duckdb
 import pandas as pd
 
 from ..config import settings
-from .storage import storage
 from . import species_data
+from .storage import storage
 
 logger = logging.getLogger(__name__)
 
@@ -1469,7 +1469,7 @@ class FIAService:
         Parameters
         ----------
         spcd : int, optional
-            Species code to lookup (e.g., 316 for loblolly pine)
+            Species code to lookup (e.g., 131 for loblolly pine)
         common_name : str, optional
             Common name to search for (case-insensitive, partial match)
         state : str, optional

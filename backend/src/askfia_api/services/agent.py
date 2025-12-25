@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 from ..config import settings
 from .fia_service import fia_service
+from .forest_types import get_forest_type_name
 from .usage_tracker import usage_tracker
 
 logger = logging.getLogger(__name__)
@@ -22,85 +23,7 @@ logger = logging.getLogger(__name__)
 
 
 # FIA code lookups for human-readable output
-# Common forest type codes (FORTYPCD) - subset of most common types
-FOREST_TYPES = {
-    101: "Jack pine",
-    102: "Red pine",
-    103: "Eastern white pine",
-    104: "Eastern white pine / hemlock",
-    105: "Eastern hemlock",
-    121: "Balsam fir",
-    122: "White spruce",
-    123: "Red spruce",
-    124: "Red spruce / balsam fir",
-    125: "Black spruce",
-    126: "Tamarack",
-    127: "Northern white-cedar",
-    141: "Longleaf pine",
-    142: "Slash pine",
-    161: "Loblolly pine",
-    162: "Shortleaf pine",
-    163: "Loblolly pine / hardwood",
-    164: "Shortleaf pine / oak",
-    165: "Virginia pine",
-    166: "Virginia pine / oak",
-    167: "Sand pine",
-    168: "Table Mountain pine",
-    171: "Pitch pine",
-    381: "Scotch pine",
-    383: "Other exotic softwoods",
-    401: "Eastern white pine / N hardwoods",
-    402: "Eastern redcedar / hardwood",
-    403: "Longleaf pine / oak",
-    404: "Shortleaf pine / oak",
-    405: "Virginia pine / southern red oak",
-    406: "Loblolly pine / hardwood",
-    407: "Slash pine / hardwood",
-    409: "Other pine / hardwood",
-    501: "Post oak / blackjack oak",
-    502: "Chestnut oak",
-    503: "White oak / red oak / hickory",
-    504: "White oak",
-    505: "Northern red oak",
-    506: "Yellow-poplar / white oak / N red oak",
-    507: "Scarlet oak",
-    508: "Chestnut oak / black oak / scarlet oak",
-    509: "Southern red oak / yellow pine",
-    510: "Mixed upland hardwoods",
-    511: "Black walnut",
-    512: "Black locust",
-    513: "Southern scrub oak",
-    514: "Yellow-poplar",
-    515: "Red maple / northern hardwoods",
-    516: "Mixed central hardwoods",
-    517: "Elm / ash / locust",
-    519: "Red maple / oak",
-    520: "Pin oak / sweetgum",
-    601: "Swamp chestnut oak / cherrybark oak",
-    602: "Sweetgum / yellow-poplar",
-    605: "Overcup oak / water hickory",
-    606: "Atlantic white-cedar",
-    607: "Baldcypress / water tupelo",
-    608: "Sweetbay / swamp tupelo / red maple",
-    701: "Black ash / American elm / red maple",
-    702: "River birch / sycamore",
-    703: "Cottonwood",
-    704: "Willow",
-    705: "Sycamore / pecan / American elm",
-    706: "Sugarberry / hackberry / elm / green ash",
-    707: "Silver maple / American elm",
-    708: "Red maple / lowland",
-    709: "Cottonwood / willow",
-    801: "Sugar maple / beech / yellow birch",
-    802: "Black cherry",
-    805: "Hard maple / basswood",
-    809: "Red maple / upland",
-    901: "Aspen",
-    902: "Paper birch",
-    904: "Balsam poplar",
-    962: "Other hardwoods",
-    999: "Nonstocked",
-}
+# Forest types are now in forest_types.py module
 
 OWNERSHIP_GROUPS = {
     10: "National Forest",
@@ -169,8 +92,8 @@ async def query_forest_area(
             estimate = row.get("AREA", row.get("ESTIMATE", 0))
 
             # Look up human-readable names
-            if grp_by == "FORTYPCD" and code in FOREST_TYPES:
-                label = FOREST_TYPES[code]
+            if grp_by == "FORTYPCD":
+                label = get_forest_type_name(code) if code else "Unknown"
             elif grp_by == "OWNGRPCD" and code in OWNERSHIP_GROUPS:
                 label = OWNERSHIP_GROUPS[code]
             elif grp_by == "STDSZCD" and code in STAND_SIZE_CLASSES:
@@ -1051,7 +974,7 @@ async def lookup_species(
     Lookup species information from FIA reference data.
 
     Use for questions about:
-    - What species code 316 is (converts SPCD to common/scientific name)
+    - What species code 131 is (converts SPCD to common/scientific name)
     - Finding the code for 'loblolly pine' (searches by common name)
     - Top species in North Carolina (lists by volume)
     - Understanding species codes in query results
