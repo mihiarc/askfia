@@ -1288,37 +1288,41 @@ class FIAService:
             raise ValueError(f"Unknown metric: {metric}. Available: {valid_metrics}")
 
         with self._get_fia_connection(state) as db:
-            # Build area_domain filter for county
-            # COUNTYCD is stored in PLOT table and can be used with area_domain
-            area_domain = f"COUNTYCD == {county_fips}"
+            # COUNTYCD is in PLOT table, so we need to use grp_by='COUNTYCD'
+            # and then filter results to the specific county
+            # (area_domain only works for COND-level attributes)
 
             # Build kwargs based on metric
             kwargs = {}
             if metric in ("area", "biomass", "tpa"):
                 kwargs["land_type"] = land_type
 
+            # Use grp_by to group by county, then filter results
             if metric == "area":
-                kwargs["area_domain"] = area_domain
+                kwargs["grp_by"] = "COUNTYCD"
             elif metric == "volume":
-                # Volume uses area_domain for plot-level filtering
-                kwargs["area_domain"] = area_domain
+                # For volume with species, we need both groupings
                 if by_species:
-                    kwargs["grp_by"] = "SPCD"
+                    kwargs["grp_by"] = ["COUNTYCD", "SPCD"]
+                else:
+                    kwargs["grp_by"] = "COUNTYCD"
                 if tree_domain:
                     kwargs["tree_domain"] = tree_domain
             elif metric == "biomass":
-                kwargs["area_domain"] = area_domain
                 if by_species:
-                    kwargs["grp_by"] = "SPCD"
+                    kwargs["grp_by"] = ["COUNTYCD", "SPCD"]
+                else:
+                    kwargs["grp_by"] = "COUNTYCD"
                 kwargs["variance"] = True
             elif metric == "tpa":
-                kwargs["area_domain"] = area_domain
+                # TPA has different interface - use grp_by for county
+                kwargs["grp_by"] = "COUNTYCD"
                 if by_species:
                     kwargs["by_species"] = True
                 if tree_domain:
                     kwargs["tree_domain"] = tree_domain
 
-            # Execute query
+            # Execute query grouped by county
             if metric == "area":
                 result_df = db.area(**kwargs)
             elif metric == "volume":
@@ -1332,7 +1336,21 @@ class FIAService:
 
             df = result_df.to_pandas() if hasattr(result_df, "to_pandas") else result_df
 
-            # Get estimate and SE columns
+            # Filter to specific county
+            if "COUNTYCD" in df.columns:
+                df = df[df["COUNTYCD"] == county_fips]
+
+            if df.empty:
+                return {
+                    "state": state,
+                    "county_fips": county_fips,
+                    "metric": metric,
+                    "error": f"No data found for county FIPS {county_fips} in {state}",
+                    "hint": "Check that the county FIPS code is correct (3-digit code)",
+                    "source": "USDA Forest Service FIA (pyFIA)",
+                }
+
+            # Get estimate and SE columns (df is already filtered to county)
             est_col = _get_estimate_column(df, metric)
             se_col = _get_se_percent_column(df, metric)
 
