@@ -1288,41 +1288,32 @@ class FIAService:
             raise ValueError(f"Unknown metric: {metric}. Available: {valid_metrics}")
 
         with self._get_fia_connection(state) as db:
-            # COUNTYCD is in PLOT table, so we need to use grp_by='COUNTYCD'
-            # and then filter results to the specific county
-            # (area_domain only works for COND-level attributes)
+            # Use plot_domain to filter by COUNTYCD (PLOT-level attribute)
+            plot_domain = f"COUNTYCD == {county_fips}"
 
             # Build kwargs based on metric
-            kwargs = {}
+            kwargs = {"plot_domain": plot_domain}
             if metric in ("area", "biomass", "tpa"):
                 kwargs["land_type"] = land_type
 
-            # Use grp_by to group by county, then filter results
             if metric == "area":
-                kwargs["grp_by"] = "COUNTYCD"
+                pass  # No additional kwargs needed
             elif metric == "volume":
-                # For volume with species, we need both groupings
                 if by_species:
-                    kwargs["grp_by"] = ["COUNTYCD", "SPCD"]
-                else:
-                    kwargs["grp_by"] = "COUNTYCD"
+                    kwargs["grp_by"] = "SPCD"
                 if tree_domain:
                     kwargs["tree_domain"] = tree_domain
             elif metric == "biomass":
                 if by_species:
-                    kwargs["grp_by"] = ["COUNTYCD", "SPCD"]
-                else:
-                    kwargs["grp_by"] = "COUNTYCD"
+                    kwargs["grp_by"] = "SPCD"
                 kwargs["variance"] = True
             elif metric == "tpa":
-                # TPA has different interface - use grp_by for county
-                kwargs["grp_by"] = "COUNTYCD"
                 if by_species:
                     kwargs["by_species"] = True
                 if tree_domain:
                     kwargs["tree_domain"] = tree_domain
 
-            # Execute query grouped by county
+            # Execute query with plot_domain filter
             if metric == "area":
                 result_df = db.area(**kwargs)
             elif metric == "volume":
@@ -1335,10 +1326,6 @@ class FIAService:
                 raise ValueError(f"Unknown metric: {metric}")
 
             df = result_df.to_pandas() if hasattr(result_df, "to_pandas") else result_df
-
-            # Filter to specific county
-            if "COUNTYCD" in df.columns:
-                df = df[df["COUNTYCD"] == county_fips]
 
             if df.empty:
                 return {
