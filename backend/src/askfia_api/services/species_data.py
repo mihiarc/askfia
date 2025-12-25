@@ -10,18 +10,35 @@ https://www.fs.usda.gov/nrs/atlas/products/resources/FIA_codes.pdf
 # FIA Species Codes (SPCD) reference
 # Based on official USDA Forest Service FIA documentation
 SPECIES_DATA = {
-    # Conifers - Firs
+    # Conifers - Firs (Eastern)
     12: {"common_name": "balsam fir", "scientific_name": "Abies balsamea"},
+    # Conifers - Firs (Western)
+    15: {"common_name": "white fir", "scientific_name": "Abies concolor"},
+    17: {"common_name": "grand fir", "scientific_name": "Abies grandis"},
+    19: {"common_name": "subalpine fir", "scientific_name": "Abies lasiocarpa"},
+    20: {"common_name": "California red fir", "scientific_name": "Abies magnifica"},
+    21: {"common_name": "Pacific silver fir", "scientific_name": "Abies amabilis"},
+    22: {"common_name": "noble fir", "scientific_name": "Abies procera"},
     # Conifers - Cedars and Junipers
+    41: {"common_name": "Port-Orford-cedar", "scientific_name": "Chamaecyparis lawsoniana"},
+    42: {"common_name": "Alaska yellow-cedar", "scientific_name": "Cupressus nootkatensis"},
     43: {"common_name": "Atlantic white-cedar", "scientific_name": "Chamaecyparis thyoides"},
+    64: {"common_name": "Rocky Mountain juniper", "scientific_name": "Juniperus scopulorum"},
+    66: {"common_name": "Utah juniper", "scientific_name": "Juniperus osteosperma"},
     68: {"common_name": "eastern redcedar", "scientific_name": "Juniperus virginiana"},
+    # Conifers - Incense-cedar
+    81: {"common_name": "incense-cedar", "scientific_name": "Calocedrus decurrens"},
     # Conifers - Larches
     71: {"common_name": "tamarack", "scientific_name": "Larix laricina"},
+    72: {"common_name": "western larch", "scientific_name": "Larix occidentalis"},
     # Conifers - Spruces
+    91: {"common_name": "Engelmann spruce", "scientific_name": "Picea engelmannii"},
+    93: {"common_name": "Sitka spruce", "scientific_name": "Picea sitchensis"},
     94: {"common_name": "white spruce", "scientific_name": "Picea glauca"},
     95: {"common_name": "black spruce", "scientific_name": "Picea mariana"},
+    96: {"common_name": "blue spruce", "scientific_name": "Picea pungens"},
     97: {"common_name": "red spruce", "scientific_name": "Picea rubens"},
-    # Conifers - Pines
+    # Conifers - Pines (Eastern)
     105: {"common_name": "jack pine", "scientific_name": "Pinus banksiana"},
     107: {"common_name": "sand pine", "scientific_name": "Pinus clausa"},
     110: {"common_name": "shortleaf pine", "scientific_name": "Pinus echinata"},
@@ -35,14 +52,36 @@ SPECIES_DATA = {
     129: {"common_name": "eastern white pine", "scientific_name": "Pinus strobus"},
     131: {"common_name": "loblolly pine", "scientific_name": "Pinus taeda"},
     132: {"common_name": "Virginia pine", "scientific_name": "Pinus virginiana"},
+    # Conifers - Pines (Western)
+    101: {"common_name": "whitebark pine", "scientific_name": "Pinus albicaulis"},
+    103: {"common_name": "bristlecone pine", "scientific_name": "Pinus aristata"},
+    104: {"common_name": "foxtail pine", "scientific_name": "Pinus balfouriana"},
+    108: {"common_name": "lodgepole pine", "scientific_name": "Pinus contorta"},
+    109: {"common_name": "Coulter pine", "scientific_name": "Pinus coulteri"},
+    112: {"common_name": "Apache pine", "scientific_name": "Pinus engelmannii"},
+    113: {"common_name": "limber pine", "scientific_name": "Pinus flexilis"},
+    116: {"common_name": "Jeffrey pine", "scientific_name": "Pinus jeffreyi"},
+    117: {"common_name": "sugar pine", "scientific_name": "Pinus lambertiana"},
+    119: {"common_name": "western white pine", "scientific_name": "Pinus monticola"},
+    122: {"common_name": "ponderosa pine", "scientific_name": "Pinus ponderosa"},
+    124: {"common_name": "Monterey pine", "scientific_name": "Pinus radiata"},
+    127: {"common_name": "gray pine", "scientific_name": "Pinus sabiniana"},
+    # Conifers - Douglas-fir
+    202: {"common_name": "Douglas-fir", "scientific_name": "Pseudotsuga menziesii"},
     # Conifers - Cypress
     221: {"common_name": "bald cypress", "scientific_name": "Taxodium distichum"},
     222: {"common_name": "pond cypress", "scientific_name": "Taxodium distichum var. nutans"},
+    # Conifers - Redwoods and Sequoias
+    211: {"common_name": "redwood", "scientific_name": "Sequoia sempervirens"},
+    212: {"common_name": "giant sequoia", "scientific_name": "Sequoiadendron giganteum"},
     # Conifers - Cedars
     241: {"common_name": "northern white-cedar", "scientific_name": "Thuja occidentalis"},
+    242: {"common_name": "western redcedar", "scientific_name": "Thuja plicata"},
     # Conifers - Hemlocks
     261: {"common_name": "eastern hemlock", "scientific_name": "Tsuga canadensis"},
-    # Hardwoods - Maples
+    263: {"common_name": "western hemlock", "scientific_name": "Tsuga heterophylla"},
+    264: {"common_name": "mountain hemlock", "scientific_name": "Tsuga mertensiana"},
+    # Hardwoods - Maples (Eastern)
     311: {"common_name": "Florida maple", "scientific_name": "Acer barbatum"},
     313: {"common_name": "boxelder", "scientific_name": "Acer negundo"},
     314: {"common_name": "black maple", "scientific_name": "Acer nigrum"},
@@ -51,6 +90,13 @@ SPECIES_DATA = {
     317: {"common_name": "silver maple", "scientific_name": "Acer saccharinum"},
     318: {"common_name": "sugar maple", "scientific_name": "Acer saccharum"},
     319: {"common_name": "mountain maple", "scientific_name": "Acer spicatum"},
+    # Hardwoods - Maples (Western)
+    312: {"common_name": "bigleaf maple", "scientific_name": "Acer macrophyllum"},
+    # Hardwoods - Alders
+    351: {"common_name": "red alder", "scientific_name": "Alnus rubra"},
+    352: {"common_name": "white alder", "scientific_name": "Alnus rhombifolia"},
+    # Hardwoods - Madrone
+    361: {"common_name": "Pacific madrone", "scientific_name": "Arbutus menziesii"},
     # Hardwoods - Buckeyes
     331: {"common_name": "Ohio buckeye", "scientific_name": "Aesculus glabra"},
     332: {"common_name": "yellow buckeye", "scientific_name": "Aesculus octandra"},
@@ -178,6 +224,22 @@ SPECIES_DATA = {
     834: {"common_name": "Shumard oak", "scientific_name": "Quercus shumardii"},
     837: {"common_name": "black oak", "scientific_name": "Quercus velutina"},
     842: {"common_name": "bluejack oak", "scientific_name": "Quercus incana"},
+    # Hardwoods - Oaks (Western)
+    801: {"common_name": "California white oak", "scientific_name": "Quercus lobata"},
+    803: {"common_name": "Arizona white oak", "scientific_name": "Quercus arizonica"},
+    805: {"common_name": "canyon live oak", "scientific_name": "Quercus chrysolepis"},
+    807: {"common_name": "blue oak", "scientific_name": "Quercus douglasii"},
+    811: {"common_name": "Emory oak", "scientific_name": "Quercus emoryi"},
+    814: {"common_name": "Oregon white oak", "scientific_name": "Quercus garryana"},
+    815: {"common_name": "Gambel oak", "scientific_name": "Quercus gambelii"},
+    818: {"common_name": "California black oak", "scientific_name": "Quercus kelloggii"},
+    821: {"common_name": "coast live oak", "scientific_name": "Quercus agrifolia"},
+    829: {"common_name": "interior live oak", "scientific_name": "Quercus wislizeni"},
+    839: {"common_name": "Mexican blue oak", "scientific_name": "Quercus oblongifolia"},
+    # Hardwoods - Tanoak
+    631: {"common_name": "tanoak", "scientific_name": "Notholithocarpus densiflorus"},
+    # Hardwoods - Chinquapin
+    431: {"common_name": "golden chinquapin", "scientific_name": "Chrysolepis chrysophylla"},
     # Hardwoods - Black locust
     901: {"common_name": "black locust", "scientific_name": "Robinia psuedoacacia"},
     # Hardwoods - Willows
