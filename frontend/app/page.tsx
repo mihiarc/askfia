@@ -3,6 +3,8 @@
 import { useChat } from "@ai-sdk/react";
 import { ChatInterface } from "@/components/chat/chat-interface";
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
 export default function Home() {
   const {
     messages,
@@ -14,7 +16,8 @@ export default function Home() {
     error,
     reload,
   } = useChat({
-    api: "/api/chat",
+    api: `${API_URL}/api/v1/chat/stream`,
+    credentials: "include",
     initialMessages: [
       {
         id: "welcome",
