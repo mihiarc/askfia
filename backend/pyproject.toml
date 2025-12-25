@@ -49,7 +49,7 @@ build-backend = "hatchling.build"
 allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/askfia_api"]
+packages = ["src/askfia_api", "src/pyfia_api"]
 
 [tool.ruff]
 line-length = 88
