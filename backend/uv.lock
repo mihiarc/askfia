@@ -66,6 +66,62 @@ wheels = [
 ]
 
 [[package]]
+name = "askfia-api"
+version = "0.2.0"
+source = { editable = "." }
+dependencies = [
+    { name = "aiofiles" },
+    { name = "bcrypt" },
+    { name = "boto3" },
+    { name = "fastapi" },
+    { name = "httpx" },
+    { name = "langchain" },
+    { name = "langchain-anthropic" },
+    { name = "langchain-core" },
+    { name = "polars" },
+    { name = "pydantic" },
+    { name = "pydantic-settings" },
+    { name = "pyfia" },
+    { name = "pyjwt" },
+    { name = "redis" },
+    { name = "uvicorn", extra = ["standard"] },
+]
+
+[package.optional-dependencies]
+dev = [
+    { name = "mypy" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-cov" },
+    { name = "ruff" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "aiofiles", specifier = ">=25.1.0" },
+    { name = "bcrypt", specifier = ">=5.0.0" },
+    { name = "boto3", specifier = ">=1.42.14" },
+    { name = "fastapi", specifier = ">=0.115.0" },
+    { name = "httpx", specifier = ">=0.28.0" },
+    { name = "langchain", specifier = ">=0.3.0" },
+    { name = "langchain-anthropic", specifier = ">=0.3.0" },
+    { name = "langchain-core", specifier = ">=0.3.0" },
+    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.13.0" },
+    { name = "polars", specifier = ">=1.0.0" },
+    { name = "pydantic", specifier = ">=2.10.0" },
+    { name = "pydantic-settings", specifier = ">=2.6.0" },
+    { name = "pyfia", specifier = ">=0.3.0" },
+    { name = "pyjwt", specifier = ">=2.10.1" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
+    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24.0" },
+    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=6.0.0" },
+    { name = "redis", specifier = ">=5.0.0" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.8.0" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.32.0" },
+]
+provides-extras = ["dev"]
+
+[[package]]
 name = "async-timeout"
 version = "5.0.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1400,7 +1456,7 @@ wheels = [
 [[package]]
 name = "pyfia"
 version = "1.1.0b1"
-source = { git = "https://github.com/mihiarc/pyfia.git?rev=ae0a3659300770674b01afff5a191bc321cdf0e8#ae0a3659300770674b01afff5a191bc321cdf0e8" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "connectorx" },
     { name = "duckdb" },
@@ -1414,62 +1470,10 @@ dependencies = [
     { name = "requests" },
     { name = "rich" },
 ]
-
-[[package]]
-name = "pyfia-api"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "aiofiles" },
-    { name = "bcrypt" },
-    { name = "boto3" },
-    { name = "fastapi" },
-    { name = "httpx" },
-    { name = "langchain" },
-    { name = "langchain-anthropic" },
-    { name = "langchain-core" },
-    { name = "polars" },
-    { name = "pydantic" },
-    { name = "pydantic-settings" },
-    { name = "pyfia" },
-    { name = "pyjwt" },
-    { name = "redis" },
-    { name = "uvicorn", extra = ["standard"] },
+sdist = { url = "https://files.pythonhosted.org/packages/93/79/952eda42b8fb55f4708f90465520c255daf7e3448803c2dcc9948a458374/pyfia-1.1.0b1.tar.gz", hash = "sha256:e7dbbc3d25304f967d12e34d00e13be7365bbd9daf4065825b3b6e0cae532e15", size = 152557 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2b/e5/fece1fb68fe7d4f9c873e53daeec0e16fb510810cb06d673dd54e644777b/pyfia-1.1.0b1-py3-none-any.whl", hash = "sha256:ad5e28e0d74bcfd2bf64a026bbbc2978eae661d9c9a8eae4d67a87ccbf94155e", size = 188650 },
 ]
-
-[package.optional-dependencies]
-dev = [
-    { name = "mypy" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "pytest-cov" },
-    { name = "ruff" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "aiofiles", specifier = ">=25.1.0" },
-    { name = "bcrypt", specifier = ">=5.0.0" },
-    { name = "boto3", specifier = ">=1.42.14" },
-    { name = "fastapi", specifier = ">=0.115.0" },
-    { name = "httpx", specifier = ">=0.28.0" },
-    { name = "langchain", specifier = ">=0.3.0" },
-    { name = "langchain-anthropic", specifier = ">=0.3.0" },
-    { name = "langchain-core", specifier = ">=0.3.0" },
-    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.13.0" },
-    { name = "polars", specifier = ">=1.0.0" },
-    { name = "pydantic", specifier = ">=2.10.0" },
-    { name = "pydantic-settings", specifier = ">=2.6.0" },
-    { name = "pyfia", git = "https://github.com/mihiarc/pyfia.git?rev=ae0a3659300770674b01afff5a191bc321cdf0e8" },
-    { name = "pyjwt", specifier = ">=2.10.1" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
-    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24.0" },
-    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=6.0.0" },
-    { name = "redis", specifier = ">=5.0.0" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.8.0" },
-    { name = "uvicorn", extras = ["standard"], specifier = ">=0.32.0" },
-]
-provides-extras = ["dev"]
 
 [[package]]
 name = "pygments"
