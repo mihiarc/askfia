@@ -137,22 +137,21 @@ def _get_estimate_column(df: pd.DataFrame, metric: str) -> str:
     raise KeyError(f"Could not find estimate column. Available: {list(df.columns)}")
 
 
-def _get_se_percent_column(df: pd.DataFrame, metric: str) -> str | None:
-    """Find the SE percent column name dynamically."""
+def _get_se_column(df: pd.DataFrame, metric: str) -> str | None:
+    """Find the SE column name dynamically.
+
+    Note: pyFIA returns SE in the same units as the estimate (e.g., acres for area),
+    NOT as a percentage. Use _calculate_se_percent() to convert to percentage.
+    """
     # Try metric-specific SE columns first (matching pyFIA output)
     metric_se_cols = {
-        "area": ["AREA_SE_PERCENT", "AREA_SE", "SE_PERCENT"],
-        "volume": ["VOL_TOTAL_SE", "VOLUME_SE_PERCENT", "VOLUME_SE", "SE_PERCENT"],
-        "biomass": [
-            "BIO_TOTAL_SE",
-            "BIO_ACRE_SE",
-            "BIOMASS_SE_PERCENT",
-            "BIOMASS_SE",
-            "SE_PERCENT",
-        ],
-        "tpa": ["TPA_SE", "TPA_SE_PERCENT", "SE_PERCENT"],
-        "mortality": ["MORT_TOTAL_SE", "MORT_ACRE_SE", "MORTALITY_SE", "SE_PERCENT"],
-        "growth": ["GROWTH_TOTAL_SE", "GROWTH_ACRE_SE", "GROWTH_SE", "SE_PERCENT"],
+        "area": ["AREA_SE", "SE"],
+        "volume": ["VOL_TOTAL_SE", "VOLUME_SE", "SE"],
+        "biomass": ["BIO_TOTAL_SE", "BIO_ACRE_SE", "BIOMASS_SE", "SE"],
+        "tpa": ["TPA_SE", "TPA_TOTAL_SE", "SE"],
+        "mortality": ["MORT_TOTAL_SE", "MORT_ACRE_SE", "MORTALITY_SE", "SE"],
+        "growth": ["GROWTH_TOTAL_SE", "GROWTH_ACRE_SE", "GROWTH_SE", "SE"],
+        "removals": ["REMOV_TOTAL_SE", "REMOV_ACRE_SE", "REMOVALS_SE", "SE"],
     }
 
     # Try metric-specific columns first
@@ -163,24 +162,41 @@ def _get_se_percent_column(df: pd.DataFrame, metric: str) -> str | None:
 
     # Try common patterns
     candidates = [
-        f"{metric.upper()}_SE_PERCENT",
-        f"{metric.upper()}_SE_PERC",
-        "SE_PERCENT",
-        "se_percent",
-        "CV",
-        "cv",
+        f"{metric.upper()}_SE",
+        "SE",
     ]
 
     for col in candidates:
         if col in df.columns and df[col].notna().any():
             return col
 
-    # Look for any column containing SE_PERC or cv
+    # Look for any column ending with _SE
     for col in df.columns:
-        if ("SE_PERC" in col.upper() or col.upper() == "CV") and df[col].notna().any():
+        if col.upper().endswith("_SE") and df[col].notna().any():
             return col
 
     return None
+
+
+def _calculate_se_percent(se_value: float, estimate: float) -> float:
+    """Calculate SE as a percentage of the estimate.
+
+    SE% = (SE / Estimate) * 100
+
+    Args:
+        se_value: Standard error in the same units as the estimate
+        estimate: The estimate value
+
+    Returns:
+        SE as a percentage (e.g., 5.2 means 5.2%)
+    """
+    if estimate <= 0 or se_value <= 0:
+        return 0.0
+    return (se_value / estimate) * 100
+
+
+# Keep backward compatibility alias
+_get_se_percent_column = _get_se_column
 
 
 class FIAService:
@@ -261,10 +277,15 @@ class FIAService:
         combined = pd.concat(results, ignore_index=True)
 
         est_col = _get_estimate_column(combined, "area")
-        se_col = _get_se_percent_column(combined, "area")
+        se_col = _get_se_column(combined, "area")
 
         total_area = float(combined[est_col].sum())
-        se_pct = float(combined[se_col].mean()) if se_col else 0.0
+        # Calculate SE% properly: combine SEs using variance propagation, then convert to %
+        if se_col and se_col in combined.columns:
+            combined_se = float((combined[se_col].dropna() ** 2).sum() ** 0.5)
+            se_pct = _calculate_se_percent(combined_se, total_area)
+        else:
+            se_pct = 0.0
 
         return {
             "states": states,
@@ -307,10 +328,15 @@ class FIAService:
         combined = pd.concat(results, ignore_index=True)
 
         est_col = _get_estimate_column(combined, "volume")
-        se_col = _get_se_percent_column(combined, "volume")
+        se_col = _get_se_column(combined, "volume")
 
         total_vol = float(combined[est_col].sum())
-        se_pct = float(combined[se_col].mean()) if se_col else 0.0
+        # Calculate SE% properly
+        if se_col and se_col in combined.columns:
+            combined_se = float((combined[se_col].dropna() ** 2).sum() ** 0.5)
+            se_pct = _calculate_se_percent(combined_se, total_vol)
+        else:
+            se_pct = 0.0
 
         return {
             "states": states,
@@ -422,10 +448,15 @@ class FIAService:
         combined = pd.concat(results, ignore_index=True)
 
         est_col = _get_estimate_column(combined, "tpa")
-        se_col = _get_se_percent_column(combined, "tpa")
+        se_col = _get_se_column(combined, "tpa")
 
         total_tpa = float(combined[est_col].sum())
-        se_pct = float(combined[se_col].mean()) if se_col else 0.0
+        # Calculate SE% properly
+        if se_col and se_col in combined.columns:
+            combined_se = float((combined[se_col].dropna() ** 2).sum() ** 0.5)
+            se_pct = _calculate_se_percent(combined_se, total_tpa)
+        else:
+            se_pct = 0.0
 
         return {
             "states": states,
@@ -1011,36 +1042,41 @@ class FIAService:
 
         # Get estimate and SE columns
         est_col = _get_estimate_column(combined, metric)
-        se_col = _get_se_percent_column(combined, metric)
+        se_col = _get_se_column(combined, metric)
+
+        # Aggregation function for SE: combine using sqrt(sum(SE^2))
+        def combine_se(x):
+            return (x**2).sum() ** 0.5
 
         # Aggregate by forest type across states
         if "FOREST_TYPE_NAME" in combined.columns:
+            agg_dict = {est_col: "sum"}
+            if se_col:
+                agg_dict[se_col] = combine_se
             grouped = (
                 combined.groupby(["FORTYPCD", "FOREST_TYPE_NAME"], dropna=False)
-                .agg(
-                    {
-                        est_col: "sum",
-                        se_col: "mean" if se_col else lambda x: 0.0,
-                    }
-                )
+                .agg(agg_dict)
                 .reset_index()
             )
         else:
             # Final fallback if something went wrong
+            agg_dict = {est_col: "sum"}
+            if se_col:
+                agg_dict[se_col] = combine_se
             grouped = (
                 combined.groupby(["FORTYPCD"], dropna=False)
-                .agg(
-                    {
-                        est_col: "sum",
-                        se_col: "mean" if se_col else lambda x: 0.0,
-                    }
-                )
+                .agg(agg_dict)
                 .reset_index()
             )
             grouped["FOREST_TYPE_NAME"] = "Unknown"
 
         total_estimate = float(grouped[est_col].sum())
-        overall_se = float(grouped[se_col].mean()) if se_col else 0.0
+        # Calculate overall SE% properly
+        if se_col and se_col in grouped.columns:
+            overall_se_value = float((grouped[se_col].dropna() ** 2).sum() ** 0.5)
+            overall_se = _calculate_se_percent(overall_se_value, total_estimate)
+        else:
+            overall_se = 0.0
 
         # Sort by estimate descending
         grouped = grouped.sort_values(est_col, ascending=False)
@@ -1048,6 +1084,9 @@ class FIAService:
         # Format breakdown
         breakdown = []
         for _, row in grouped.iterrows():
+            est_value = float(row[est_col])
+            se_value = float(row[se_col]) if se_col and pd.notna(row.get(se_col)) else 0.0
+            se_pct = _calculate_se_percent(se_value, est_value)
             breakdown.append(
                 {
                     "FORTYPCD": int(row["FORTYPCD"])
@@ -1056,8 +1095,8 @@ class FIAService:
                     "FOREST_TYPE_NAME": row["FOREST_TYPE_NAME"]
                     if pd.notna(row.get("FOREST_TYPE_NAME"))
                     else "Unknown",
-                    "ESTIMATE": float(row[est_col]),
-                    "SE_PERCENT": float(row[se_col]) if se_col else 0.0,
+                    "ESTIMATE": est_value,
+                    "SE_PERCENT": se_pct,
                 }
             )
 
@@ -1120,13 +1159,21 @@ class FIAService:
                     )
 
                     est_col = _get_estimate_column(df, metric)
-                    se_col = _get_se_percent_column(df, metric)
+                    se_col = _get_se_column(df, metric)
+
+                    estimate = float(df[est_col].sum())
+                    # Calculate SE% properly
+                    if se_col and se_col in df.columns:
+                        combined_se = float((df[se_col].dropna() ** 2).sum() ** 0.5)
+                        se_pct = _calculate_se_percent(combined_se, estimate)
+                    else:
+                        se_pct = None
 
                     results.append(
                         {
                             "state": state,
-                            "estimate": float(df[est_col].sum()),
-                            "se_percent": float(df[se_col].mean()) if se_col else None,
+                            "estimate": estimate,
+                            "se_percent": se_pct,
                             "error": None,
                         }
                     )
@@ -1228,7 +1275,16 @@ class FIAService:
         for owngrpcd in sorted(combined["OWNGRPCD"].unique()):
             subset = combined[combined["OWNGRPCD"] == owngrpcd]
             estimate = float(subset[est_col].sum())
-            se_pct = float(subset[se_col].mean()) if se_col else 0.0
+
+            # Calculate SE% properly: SE values need to be combined using variance propagation
+            # For sums: Var(sum) = sum(Var) assuming independence, so SE = sqrt(sum(SE^2))
+            if se_col and se_col in subset.columns:
+                se_values = subset[se_col].dropna()
+                # Combine SEs: sqrt(sum of squared SEs)
+                combined_se = float((se_values**2).sum() ** 0.5)
+                se_pct = _calculate_se_percent(combined_se, estimate)
+            else:
+                se_pct = 0.0
 
             ownership_breakdown.append(
                 {
@@ -1339,12 +1395,19 @@ class FIAService:
 
             # Get estimate and SE columns (df is already filtered to county)
             est_col = _get_estimate_column(df, metric)
-            se_col = _get_se_percent_column(df, metric)
+            se_col = _get_se_column(df, metric)
+
+            # Helper to calculate SE% for this function
+            def calc_se_pct(estimate: float) -> float:
+                if se_col and se_col in df.columns:
+                    combined_se = float((df[se_col].dropna() ** 2).sum() ** 0.5)
+                    return _calculate_se_percent(combined_se, estimate)
+                return 0.0
 
             # Format response based on metric
             if metric == "area":
                 total_area = float(df[est_col].sum())
-                se_pct = float(df[se_col].mean()) if se_col else 0.0
+                se_pct = calc_se_pct(total_area)
                 return {
                     "state": state,
                     "county_fips": county_fips,
@@ -1356,7 +1419,7 @@ class FIAService:
                 }
             elif metric == "volume":
                 total_vol = float(df[est_col].sum())
-                se_pct = float(df[se_col].mean()) if se_col else 0.0
+                se_pct = calc_se_pct(total_vol)
                 return {
                     "state": state,
                     "county_fips": county_fips,
@@ -1376,7 +1439,7 @@ class FIAService:
                     if "CARB_TOTAL" in df.columns
                     else total_biomass * 0.47
                 )
-                se_pct = float(df[se_col].mean()) if se_col else 0.0
+                se_pct = calc_se_pct(total_biomass)
                 return {
                     "state": state,
                     "county_fips": county_fips,
@@ -1390,7 +1453,7 @@ class FIAService:
                 }
             elif metric == "tpa":
                 total_tpa = float(df[est_col].sum())
-                se_pct = float(df[se_col].mean()) if se_col else 0.0
+                se_pct = calc_se_pct(total_tpa)
                 return {
                     "state": state,
                     "county_fips": county_fips,
