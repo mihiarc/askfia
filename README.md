@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="https://fiatools.org/logos/askfia-logo.svg" alt="askFIA" width="140">
+  <img src="https://fiatools.org/logos/askfia_logo.png" alt="askFIA" width="140">
 
   <h1>askFIA</h1>
 
