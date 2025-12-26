@@ -1,127 +1,184 @@
-# AskFIA
+<div align="center">
+  <img src="https://fiatools.org/logos/askfia-logo.svg" alt="askFIA" width="140">
 
-A public-facing AI-powered interface to the USDA Forest Service Forest Inventory and Analysis (FIA) database.
+  <h1>askFIA</h1>
 
-Part of the **FIA Python Ecosystem**:
-- [PyFIA](https://github.com/mihiarc/pyfia): Survey/plot data analysis
-- [GridFIA](https://github.com/mihiarc/gridfia): Spatial raster analysis
-- [PyFVS](https://github.com/mihiarc/pyfvs): Growth/yield simulation
-- [AskFIA](https://github.com/mihiarc/askfia): AI conversational interface (this package)
+  <p><strong>Ask questions, get forest answers</strong></p>
 
-## Features
+  <p>
+    <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-006D6D" alt="License: MIT"></a>
+    <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.9+-006D6D" alt="Python 3.9+"></a>
+  </p>
 
-- Natural Language Queries - Ask questions about forest inventory in plain English
-- Validated Statistics - All estimates match official USFS EVALIDator results
-- Data Downloads - Create custom data exports for your own analysis
-- Visualizations - Interactive charts and maps (coming soon)
+  <p>
+    <sub>Part of the <a href="https://fiatools.org"><strong>FIAtools</strong></a> ecosystem:
+    <a href="https://github.com/mihiarc/pyfia">pyFIA</a> ·
+    <a href="https://github.com/mihiarc/gridfia">gridFIA</a> ·
+    <a href="https://github.com/mihiarc/pyfvs">pyFVS</a> ·
+    <a href="https://github.com/mihiarc/askfia">askFIA</a></sub>
+  </p>
+</div>
 
-## Tech Stack
+---
 
-- **Frontend**: Next.js 15, Vercel AI SDK, shadcn/ui, Tailwind CSS
-- **Backend**: FastAPI, LangChain, Claude Sonnet
-- **Data**: [PyFIA](https://github.com/mihiarc/pyfia) (DuckDB/Polars)
+A conversational AI interface for forest inventory data. Ask natural language questions and get answers powered by the FIAtools ecosystem.
 
-## Project Structure
+## What can you ask?
 
 ```
-askfia/
-├── frontend/          # Next.js application
-│   ├── app/           # App Router pages
-│   ├── components/    # React components
-│   └── lib/           # Utilities
-├── backend/           # FastAPI application
-│   ├── src/askfia_api/ # API source code
-│   └── data/          # FIA database files (gitignored)
-├── docker-compose.yml # Local development
-└── README.md
+"How much timber volume is in North Carolina?"
+
+"Compare loblolly pine biomass between Georgia and Alabama"
+
+"What's the species diversity in Humboldt County, California?"
+
+"Project growth for a 500 TPA loblolly stand over 30 years"
+
+"Show me mortality trends in the Pacific Northwest"
 ```
 
 ## Quick Start
 
-### Prerequisites
+```bash
+pip install askfia
+```
 
-- Node.js 20+
-- Python 3.11+
-- pnpm (for frontend)
-- uv (for backend, recommended)
+```python
+from askfia import AskFIA
 
-### Development
+fia = AskFIA()
 
-1. **Clone and setup**:
-   ```bash
-   git clone https://github.com/mihiarc/askfia.git
-   cd askfia
-   ```
+# Natural language queries
+answer = fia.ask("What's the total forest area in Oregon?")
+print(answer)
 
-2. **Start the backend**:
-   ```bash
-   cd backend
-   cp .env.example .env
-   # Add your ANTHROPIC_API_KEY to .env
-   uv sync
-   uv run uvicorn askfia_api.main:app --reload
-   ```
+# With context
+answer = fia.ask(
+    "How does this compare to Washington?",
+    context=answer  # Continues the conversation
+)
+```
 
-3. **Start the frontend** (new terminal):
-   ```bash
-   cd frontend
-   cp .env.example .env.local
-   pnpm install
-   pnpm dev
-   ```
+## Features
 
-4. Open http://localhost:3000
+| Capability | Description |
+|------------|-------------|
+| **Natural language** | Ask questions in plain English |
+| **Multi-tool** | Automatically routes to pyFIA, gridFIA, or pyFVS |
+| **Conversational** | Follow-up questions with context |
+| **Visualizations** | Generates charts and maps |
+| **Reports** | Export analysis to markdown/PDF |
 
-### Docker (Recommended)
+## Example Session
+
+```python
+>>> fia.ask("What are the top 5 species by biomass in North Carolina?")
+
+Based on FIA data for North Carolina:
+
+| Rank | Species | Biomass (tons) |
+|------|---------|----------------|
+| 1 | Loblolly Pine | 245,892,000 |
+| 2 | Yellow-poplar | 89,234,000 |
+| 3 | Red Maple | 67,891,000 |
+| 4 | Sweetgum | 54,123,000 |
+| 5 | White Oak | 48,567,000 |
+
+>>> fia.ask("Show me where loblolly is most concentrated")
+
+[Generates choropleth map using gridFIA data]
+
+>>> fia.ask("What would a 30-year projection look like for a typical loblolly stand?")
+
+[Runs pyFVS simulation and returns yield table]
+```
+
+## Architecture
+
+```
+┌─────────────┐
+│   askFIA    │  Natural language interface
+└──────┬──────┘
+       │
+       ▼
+┌─────────────┐
+│   Router    │  Determines which tool(s) to use
+└──────┬──────┘
+       │
+       ├──────────────┬──────────────┐
+       ▼              ▼              ▼
+┌─────────────┐ ┌─────────────┐ ┌─────────────┐
+│   pyFIA     │ │  gridFIA    │ │   pyFVS     │
+│  (surveys)  │ │  (spatial)  │ │  (growth)   │
+└─────────────┘ └─────────────┘ └─────────────┘
+```
+
+## Configuration
+
+```python
+from askfia import AskFIA
+
+fia = AskFIA(
+    database="path/to/FIA_database.duckdb",
+    zarr_cache="path/to/gridfia_cache",
+    model="gpt-4",  # or claude-3, local llama, etc.
+    verbose=True
+)
+```
+
+## CLI Usage
 
 ```bash
-cp .env.example .env
-# Add your ANTHROPIC_API_KEY to .env
-docker compose up
+# Interactive mode
+askfia chat
+
+# Single query
+askfia query "Forest area in Maine"
+
+# Generate report
+askfia report "Pacific Northwest timber summary" --output report.pdf
 ```
 
-## Environment Variables
+## Ecosystem Integration
 
-### Backend (.env)
+askFIA orchestrates the entire FIAtools suite:
+
+```python
+# This single query:
+fia.ask("Compare forest carbon between 2010 and 2020 in the Southeast")
+
+# Automatically:
+# 1. Uses pyFIA to query biomass estimates for both time periods
+# 2. Calculates carbon from biomass using standard conversion factors
+# 3. Computes change statistics with proper variance estimation
+# 4. Formats results with appropriate uncertainty bounds
 ```
-ANTHROPIC_API_KEY=sk-ant-...
-CORS_ORIGINS=http://localhost:3000
-REDIS_URL=redis://localhost:6379
+
+## Coming Soon
+
+- [ ] Voice interface
+- [ ] Slack/Discord integration
+- [ ] Scheduled reports
+- [ ] Custom analysis templates
+- [ ] Multi-state comparisons
+
+## Citation
+
+```bibtex
+@software{askfia2025,
+  title = {askFIA: Conversational AI Interface for Forest Inventory Data},
+  author = {Mihiar, Christopher},
+  year = {2025},
+  url = {https://github.com/mihiarc/askfia}
+}
 ```
-
-### Frontend (.env.local)
-```
-BACKEND_URL=http://localhost:8000
-```
-
-## API Endpoints
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/v1/chat/stream` | POST | Streaming chat with AI agent |
-| `/api/v1/query/area` | POST | Query forest area |
-| `/api/v1/query/volume` | POST | Query timber volume |
-| `/api/v1/query/biomass` | POST | Query biomass/carbon |
-| `/api/v1/query/compare` | POST | Compare states |
-| `/api/v1/downloads/prepare` | POST | Prepare data download |
-| `/api/v1/health` | GET | Health check |
-
-## Example Queries
-
-- "How much forest land is in North Carolina?"
-- "Compare timber volume in Georgia, South Carolina, and Florida"
-- "What are the top 5 tree species by biomass in Oregon?"
-- "Show me carbon stocks in California"
-- "Prepare a data download for Alabama"
-
-## Data Source
-
-All data comes from the USDA Forest Service [Forest Inventory and Analysis (FIA)](https://www.fia.fs.usda.gov/) program. Statistics are computed using [PyFIA](https://github.com/mihiarc/pyfia), which implements design-based estimation methods following Bechtold & Patterson (2005).
 
 ## License
 
-MIT
+MIT License — see [LICENSE](LICENSE) for details.
 
-## Contributing
+---
 
-Contributions welcome! Please read our contributing guidelines first.
+<div align="center">
+  <sub>Built with 🌲 by <a href="https://github.com/mihiarc">Chris Mihiar</a> · USDA Forest Service Southern Research Station</sub>
+</div>
