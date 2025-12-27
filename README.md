@@ -138,12 +138,9 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 
 ## Coming Soon
 
-- [ ] Voice interface
-- [ ] Slack/Discord integration
-- [ ] Scheduled reports
+- [ ] Custom reports
+- [ ] Data downloads
 - [ ] Custom analysis templates
-- [ ] CLI tool
-- [ ] Python SDK
 
 ## Citation
 
