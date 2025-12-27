@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="https://fiatools.org/logos/askfia_logo.png" alt="askFIA" width="400">
+  <a href="https://askfia.netlify.app"><img src="https://fiatools.org/logos/askfia_logo.png" alt="askFIA" width="400"></a>
 
   <p><strong>Ask questions, get forest answers</strong></p>
 
