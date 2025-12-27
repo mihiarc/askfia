@@ -81,7 +81,7 @@ Repository = "https://github.com/mihiarc/askfia"
 "Source Code" = "https://github.com/mihiarc/askfia"
 "Bug Tracker" = "https://github.com/mihiarc/askfia/issues"
 Changelog = "https://github.com/mihiarc/askfia/releases"
-"Live App" = "https://askfia.netlify.app"
+"Live App" = "https://ask.fiatools.org"
 "FIA Ecosystem" = "https://fiatools.org"
 
 [build-system]

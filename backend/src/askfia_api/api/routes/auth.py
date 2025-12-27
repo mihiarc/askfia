@@ -6,9 +6,13 @@ from datetime import UTC, datetime, timedelta
 import bcrypt
 import jwt
 from fastapi import APIRouter, Cookie, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 
 from askfia_api.config import get_settings
+from askfia_api.services.email_storage import (
+    register_user,
+    validate_email,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -19,9 +23,15 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 
 class LoginRequest(BaseModel):
-    """Login request with password."""
+    """Login request with password (legacy)."""
 
     password: str
+
+
+class EmailSignupRequest(BaseModel):
+    """Email signup request."""
+
+    email: EmailStr
 
 
 class AuthResponse(BaseModel):
@@ -29,17 +39,26 @@ class AuthResponse(BaseModel):
 
     authenticated: bool
     message: str
+    email: str | None = None
+    is_new_user: bool | None = None
 
 
 # --- Token Functions ---
 
 
-def create_token(token_type: str, expires_delta: timedelta) -> str:
+def create_token(
+    token_type: str,
+    expires_delta: timedelta,
+    email: str | None = None,
+    user_id: str | None = None,
+) -> str:
     """Create a JWT token.
 
     Args:
         token_type: Either "access" or "refresh"
         expires_delta: Token validity duration
+        email: Optional user email to include in token
+        user_id: Optional user ID to include in token
 
     Returns:
         Encoded JWT token string
@@ -51,6 +70,10 @@ def create_token(token_type: str, expires_delta: timedelta) -> str:
         "exp": expire,
         "iat": datetime.now(UTC),
     }
+    if email:
+        payload["email"] = email
+    if user_id:
+        payload["sub"] = user_id
     return jwt.encode(payload, settings.auth_jwt_secret, algorithm="HS256")
 
 
@@ -79,20 +102,52 @@ def verify_token(token: str, token_type: str) -> bool:
         return False
 
 
-def set_auth_cookies(response: Response) -> None:
+def decode_token(token: str) -> dict | None:
+    """Decode a JWT token and return the payload.
+
+    Args:
+        token: The JWT token to decode
+
+    Returns:
+        Token payload dict or None if invalid
+    """
+    settings = get_settings()
+    if not settings.auth_jwt_secret:
+        return None
+
+    try:
+        return jwt.decode(token, settings.auth_jwt_secret, algorithms=["HS256"])
+    except jwt.InvalidTokenError:
+        return None
+
+
+def set_auth_cookies(
+    response: Response,
+    email: str | None = None,
+    user_id: str | None = None,
+) -> None:
     """Set authentication cookies on response.
 
     Creates both access and refresh tokens and sets them as HTTP-only cookies.
+
+    Args:
+        response: FastAPI Response object
+        email: Optional user email to include in tokens
+        user_id: Optional user ID to include in tokens
     """
     settings = get_settings()
 
     access_token = create_token(
         "access",
         timedelta(seconds=settings.auth_access_token_expire),
+        email=email,
+        user_id=user_id,
     )
     refresh_token = create_token(
         "refresh",
         timedelta(seconds=settings.auth_refresh_token_expire),
+        email=email,
+        user_id=user_id,
     )
 
     # Access token cookie - available to all paths
@@ -157,6 +212,62 @@ async def login(request: LoginRequest, response: Response) -> AuthResponse:
         authenticated=True,
         message="Login successful",
     )
+
+
+@router.post("/signup", response_model=AuthResponse)
+async def signup(request: EmailSignupRequest, response: Response) -> AuthResponse:
+    """Register or login with email address.
+
+    This endpoint:
+    - Validates email format
+    - Creates a new user or returns existing user
+    - Issues JWT tokens with email in payload
+    """
+    email = request.email.lower().strip()
+
+    # Validate email format
+    if not validate_email(email):
+        return AuthResponse(
+            authenticated=False,
+            message="Invalid email format",
+        )
+
+    try:
+        # Register user (or get existing)
+        user, is_new = register_user(email)
+
+        # Set auth cookies with email info
+        set_auth_cookies(response, email=user["email"], user_id=user["id"])
+
+        if is_new:
+            logger.info(f"New user registered: {email}")
+            return AuthResponse(
+                authenticated=True,
+                message="Welcome! Your account has been created.",
+                email=user["email"],
+                is_new_user=True,
+            )
+        else:
+            logger.info(f"Existing user logged in: {email}")
+            return AuthResponse(
+                authenticated=True,
+                message="Welcome back!",
+                email=user["email"],
+                is_new_user=False,
+            )
+
+    except ValueError as e:
+        logger.warning(f"Email validation failed: {e}")
+        return AuthResponse(
+            authenticated=False,
+            message=str(e),
+        )
+    except Exception as e:
+        logger.error(f"Signup error: {e}")
+        return AuthResponse(
+            authenticated=False,
+            message="An error occurred. Please try again.",
+        )
 
 
 @router.post("/logout", response_model=AuthResponse)
@@ -225,9 +336,13 @@ async def verify(
         )
 
     if verify_token(access_token, "access"):
+        # Decode token to get email
+        payload = decode_token(access_token)
+        email = payload.get("email") if payload else None
         return AuthResponse(
             authenticated=True,
             message="Authenticated",
+            email=email,
         )
 
     return AuthResponse(

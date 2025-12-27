@@ -5,7 +5,7 @@
 
   <p>
     <a href="https://fiatools.org"><img src="https://img.shields.io/badge/FIAtools-Ecosystem-2E7D32" alt="FIAtools Ecosystem"></a>
-    <a href="https://askfia.netlify.app"><img src="https://img.shields.io/badge/Try_it-askfia.netlify.app-006D6D" alt="Live App"></a>
+    <a href="https://ask.fiatools.org"><img src="https://img.shields.io/badge/Try_it-ask.fiatools.org-006D6D" alt="Live App"></a>
     <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-006D6D" alt="License: MIT"></a>
     <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.11+-006D6D" alt="Python 3.11+"></a>
   </p>
@@ -39,7 +39,7 @@ A conversational AI interface for forest inventory data. Ask natural language qu
 
 ## Try It
 
-Visit **[askfia.netlify.app](https://askfia.netlify.app)** to start asking questions.
+Visit **[ask.fiatools.org](https://ask.fiatools.org)** to start asking questions.
 
 ## Features
 
@@ -54,7 +54,7 @@ Visit **[askfia.netlify.app](https://askfia.netlify.app)** to start asking quest
 
 ```mermaid
 graph TD
-    A[askfia.netlify.app] --> B[askfia-api.onrender.com]
+    A[ask.fiatools.org] --> B[askfia-api.onrender.com]
     B --> C[pyFIA]
     C --> D[MotherDuck]
 ```

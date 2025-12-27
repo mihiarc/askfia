@@ -57,7 +57,7 @@ uvicorn askfia_api.main:app --host 0.0.0.0 --port $PORT
 |----------|-------|
 | Site Name | `askfia` |
 | Site ID | `60dcedd5-a264-4e59-9fdc-4fe8c7fc9d7f` |
-| URL | https://askfia.netlify.app |
+| URL | https://ask.fiatools.org |
 | Dashboard | https://app.netlify.com/projects/askfia |
 | Build Command | `npm run build` |
 | Publish Directory | `.next` |
