@@ -1,9 +1,11 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useChat, Message } from "@ai-sdk/react";
 import { ChatInterface } from "@/components/chat/chat-interface";
 import { HeroSection } from "@/components/hero/hero-section";
+import { useAuth } from "@/lib/hooks/use-auth";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -30,15 +32,30 @@ export default function Home() {
   const [showChat, setShowChat] = useState(false);
   const [isHydrated, setIsHydrated] = useState(false);
   const chatRef = useRef<HTMLDivElement>(null);
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const { isAuthenticated, isLoading: authLoading, verify } = useAuth();
+
+  // Verify auth status on mount
+  useEffect(() => {
+    verify();
+  }, [verify]);
 
   // Load initial state from localStorage after hydration
+  // Also check if returning from login with chat=true param
   useEffect(() => {
+    const chatParam = searchParams.get("chat");
     const savedShowChat = localStorage.getItem(SHOW_CHAT_KEY);
-    if (savedShowChat === "true") {
+
+    if (chatParam === "true" && isAuthenticated) {
+      setShowChat(true);
+      // Clean up URL
+      router.replace("/", { scroll: false });
+    } else if (savedShowChat === "true" && isAuthenticated) {
       setShowChat(true);
     }
     setIsHydrated(true);
-  }, []);
+  }, [searchParams, isAuthenticated, router]);
 
   // Load saved messages from localStorage
   const getInitialMessages = useCallback((): Message[] => {
@@ -100,6 +117,11 @@ export default function Home() {
   ];
 
   const handleStartExploring = () => {
+    if (!isAuthenticated) {
+      // Redirect to login, will return with ?chat=true
+      router.push("/login?return=chat");
+      return;
+    }
     setShowChat(true);
   };
 

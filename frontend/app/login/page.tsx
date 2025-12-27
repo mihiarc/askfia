@@ -1,15 +1,28 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/hooks/use-auth";
 
 export default function LoginPage() {
   const [password, setPassword] = useState("");
   const { login, isLoading, error } = useAuth();
+  const router = useRouter();
+  const searchParams = useSearchParams();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    await login(password);
+    const success = await login(password);
+
+    if (success) {
+      // Check if we should return to chat
+      const returnTo = searchParams.get("return");
+      if (returnTo === "chat") {
+        router.push("/?chat=true");
+      } else {
+        router.push("/");
+      }
+    }
   };
 
   return (

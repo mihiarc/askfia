@@ -4,7 +4,8 @@ import { useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { useAuth } from "@/lib/hooks/use-auth";
 
-const PUBLIC_PATHS = ["/login"];
+// Hero/landing page is public, chat requires auth
+const PUBLIC_PATHS = ["/", "/login"];
 
 interface AuthProviderProps {
   children: React.ReactNode;
