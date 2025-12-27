@@ -34,17 +34,19 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
   }, [isAuthenticated, isLoading, pathname, router]);
 
-  // Show loading state
-  if (isLoading) {
+  // Check if on a public path
+  const isPublicPath = PUBLIC_PATHS.includes(pathname);
+
+  // Show loading state only for protected paths
+  if (isLoading && !isPublicPath) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin h-8 w-8 border-4 border-green-600 border-t-transparent rounded-full" />
+        <div className="animate-spin h-8 w-8 border-4 border-forest-600 border-t-transparent rounded-full" />
       </div>
     );
   }
 
   // Don't render protected content until authenticated
-  const isPublicPath = PUBLIC_PATHS.includes(pathname);
   if (!isAuthenticated && !isPublicPath) {
     return null;
   }

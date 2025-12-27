@@ -8,7 +8,7 @@ const inter = Inter({ subsets: ["latin"] });
 export const metadata: Metadata = {
   title: "Forest Inventory Explorer",
   description:
-    "Natural language interface to USDA Forest Service FIA data, powered by pyFIA",
+    "AI-powered natural language interface to USDA Forest Service FIA data. Query forest area, timber volume, biomass, and carbon stocks with simple questions.",
   keywords: [
     "forest inventory",
     "FIA",
@@ -16,7 +16,16 @@ export const metadata: Metadata = {
     "timber",
     "biomass",
     "carbon",
+    "AI",
+    "natural language",
+    "pyFIA",
   ],
+  openGraph: {
+    title: "Forest Inventory Explorer",
+    description:
+      "Explore America's forests with natural language. AI-powered queries for forest area, timber volume, biomass, and carbon stocks.",
+    type: "website",
+  },
 };
 
 export default function RootLayout({
@@ -28,34 +37,6 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body className={inter.className}>
         <div className="min-h-screen bg-background">
-          <header className="border-b bg-card">
-            <div className="container mx-auto px-4 py-3 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="text-2xl">🌲</span>
-                <h1 className="text-xl font-semibold text-foreground">
-                  Forest Inventory Explorer
-                </h1>
-              </div>
-              <nav className="flex items-center gap-4">
-                <a
-                  href="https://github.com/mihiarc/pyfia"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  pyFIA
-                </a>
-                <a
-                  href="https://www.fia.fs.usda.gov/"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  FIA Program
-                </a>
-              </nav>
-            </div>
-          </header>
           <main>
             <AuthProvider>{children}</AuthProvider>
           </main>

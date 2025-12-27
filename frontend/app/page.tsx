@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useChat, Message } from "@ai-sdk/react";
 import { ChatInterface } from "@/components/chat/chat-interface";
@@ -28,13 +28,13 @@ I can help you understand forest resources across the United States using data f
 All statistics are computed using [pyFIA](https://github.com/mihiarc/pyfia) and validated against official USFS estimates.`,
 };
 
-export default function Home() {
+function HomeContent() {
   const [showChat, setShowChat] = useState(false);
   const [isHydrated, setIsHydrated] = useState(false);
   const chatRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { isAuthenticated, isLoading: authLoading, verify } = useAuth();
+  const { isAuthenticated, verify } = useAuth();
 
   // Verify auth status on mount
   useEffect(() => {
@@ -175,5 +175,17 @@ export default function Home() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function Home() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-pulse text-muted-foreground">Loading...</div>
+      </div>
+    }>
+      <HomeContent />
+    </Suspense>
   );
 }
