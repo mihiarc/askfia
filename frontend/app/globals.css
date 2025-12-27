@@ -103,14 +103,186 @@
   @apply bg-muted font-medium;
 }
 
+/* Improved inline code styling */
 .prose-chat code {
-  @apply bg-muted px-1 py-0.5 rounded text-xs;
+  @apply bg-muted px-1.5 py-0.5 rounded text-sm font-mono;
+  color: hsl(var(--foreground));
 }
 
+/* Improved code block styling */
 .prose-chat pre {
-  @apply bg-muted p-3 rounded-lg overflow-x-auto;
+  @apply bg-slate-900 dark:bg-slate-950 p-4 rounded-lg overflow-x-auto my-3;
+  border: 1px solid hsl(var(--border));
 }
 
 .prose-chat pre code {
-  @apply bg-transparent p-0;
+  @apply bg-transparent p-0 text-sm leading-relaxed;
+  color: #e2e8f0;
 }
+
+/* Better link styling in chat */
+.prose-chat a {
+  @apply text-forest-600 dark:text-forest-400 underline underline-offset-2 hover:text-forest-500 dark:hover:text-forest-300 transition-colors;
+}
+
+/* ===================================
+   Hero Section Animations
+   =================================== */
+
+/* Slow pulsing animation for background orbs */
+@keyframes pulse-slow {
+  0%, 100% {
+    opacity: 0.3;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(1.05);
+  }
+}
+
+@keyframes pulse-slower {
+  0%, 100% {
+    opacity: 0.2;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.4;
+    transform: scale(1.08);
+  }
+}
+
+.animate-pulse-slow {
+  animation: pulse-slow 4s ease-in-out infinite;
+  will-change: opacity, transform;
+}
+
+.animate-pulse-slower {
+  animation: pulse-slower 6s ease-in-out infinite;
+  will-change: opacity, transform;
+}
+
+/* Floating particles animation */
+@keyframes float-up {
+  0% {
+    transform: translateY(0) translateX(0) rotate(0deg);
+    opacity: 0;
+  }
+  10% {
+    opacity: 0.6;
+  }
+  90% {
+    opacity: 0.6;
+  }
+  100% {
+    transform: translateY(-100vh) translateX(20px) rotate(360deg);
+    opacity: 0;
+  }
+}
+
+.animate-float-up {
+  animation: float-up 20s linear infinite;
+  will-change: transform, opacity;
+}
+
+/* SVG line drawing animation */
+@keyframes draw-line {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.animate-draw-line {
+  animation: draw-line 3s ease-out forwards;
+  animation-delay: 1s;
+}
+
+/* Shimmer effect for glassmorphism */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.animate-shimmer {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.05) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 3s ease-in-out infinite;
+}
+
+/* Typing cursor blink */
+@keyframes blink {
+  0%, 50% {
+    opacity: 1;
+  }
+  51%, 100% {
+    opacity: 0;
+  }
+}
+
+.animate-blink {
+  animation: blink 1s step-end infinite;
+}
+
+/* Gentle float animation for icons */
+@keyframes gentle-float {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+.animate-gentle-float {
+  animation: gentle-float 3s ease-in-out infinite;
+}
+
+/* Scale in animation for cards */
+@keyframes scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-scale-in {
+  animation: scale-in 0.5s ease-out forwards;
+}
+
+/* Fade in up animation */
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 0.6s ease-out forwards;
+}
+
+/* Staggered animation delays */
+.animation-delay-100 { animation-delay: 100ms; }
+.animation-delay-200 { animation-delay: 200ms; }
+.animation-delay-300 { animation-delay: 300ms; }
+.animation-delay-400 { animation-delay: 400ms; }
+.animation-delay-500 { animation-delay: 500ms; }
+.animation-delay-600 { animation-delay: 600ms; }
+.animation-delay-700 { animation-delay: 700ms; }
