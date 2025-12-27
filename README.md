@@ -1,13 +1,12 @@
 <div align="center">
-  <img src="https://fiatools.org/logos/askfia_logo.png" alt="askFIA" width="140">
-
-  <h1>askFIA</h1>
+  <img src="https://fiatools.org/logos/askfia_logo.png" alt="askFIA" width="280">
 
   <p><strong>Ask questions, get forest answers</strong></p>
 
   <p>
+    <a href="https://askfia.netlify.app"><img src="https://img.shields.io/badge/Try_it-askfia.netlify.app-006D6D" alt="Live App"></a>
     <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-006D6D" alt="License: MIT"></a>
-    <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.9+-006D6D" alt="Python 3.9+"></a>
+    <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.11+-006D6D" alt="Python 3.11+"></a>
   </p>
 
   <p>
@@ -21,7 +20,7 @@
 
 ---
 
-A conversational AI interface for forest inventory data. Ask natural language questions and get answers powered by the FIAtools ecosystem.
+A conversational AI interface for forest inventory data. Ask natural language questions about USDA Forest Service FIA data and get instant answers.
 
 ## What can you ask?
 
@@ -30,129 +29,112 @@ A conversational AI interface for forest inventory data. Ask natural language qu
 
 "Compare loblolly pine biomass between Georgia and Alabama"
 
-"What's the species diversity in Humboldt County, California?"
+"What are the top species by basal area in Oregon?"
 
-"Project growth for a 500 TPA loblolly stand over 30 years"
+"How has forest area changed in the Southeast?"
 
 "Show me mortality trends in the Pacific Northwest"
 ```
 
-## Quick Start
+## Try It
 
-```bash
-pip install askfia
-```
-
-```python
-from askfia import AskFIA
-
-fia = AskFIA()
-
-# Natural language queries
-answer = fia.ask("What's the total forest area in Oregon?")
-print(answer)
-
-# With context
-answer = fia.ask(
-    "How does this compare to Washington?",
-    context=answer  # Continues the conversation
-)
-```
+Visit **[askfia.netlify.app](https://askfia.netlify.app)** to start asking questions.
 
 ## Features
 
 | Capability | Description |
 |------------|-------------|
 | **Natural language** | Ask questions in plain English |
-| **Multi-tool** | Automatically routes to pyFIA, gridFIA, or pyFVS |
 | **Conversational** | Follow-up questions with context |
-| **Visualizations** | Generates charts and maps |
-| **Reports** | Export analysis to markdown/PDF |
-
-## Example Session
-
-```python
->>> fia.ask("What are the top 5 species by biomass in North Carolina?")
-
-Based on FIA data for North Carolina:
-
-| Rank | Species | Biomass (tons) |
-|------|---------|----------------|
-| 1 | Loblolly Pine | 245,892,000 |
-| 2 | Yellow-poplar | 89,234,000 |
-| 3 | Red Maple | 67,891,000 |
-| 4 | Sweetgum | 54,123,000 |
-| 5 | White Oak | 48,567,000 |
-
->>> fia.ask("Show me where loblolly is most concentrated")
-
-[Generates choropleth map using gridFIA data]
-
->>> fia.ask("What would a 30-year projection look like for a typical loblolly stand?")
-
-[Runs pyFVS simulation and returns yield table]
-```
+| **Streaming** | Real-time response streaming |
+| **FIA data access** | Queries USDA Forest Service inventory data |
 
 ## Architecture
 
-```
-┌─────────────┐
-│   askFIA    │  Natural language interface
-└──────┬──────┘
-       │
-       ▼
-┌─────────────┐
-│   Router    │  Determines which tool(s) to use
-└──────┬──────┘
-       │
-       ├──────────────┬──────────────┐
-       ▼              ▼              ▼
-┌─────────────┐ ┌─────────────┐ ┌─────────────┐
-│   pyFIA     │ │  gridFIA    │ │   pyFVS     │
-│  (surveys)  │ │  (spatial)  │ │  (growth)   │
-└─────────────┘ └─────────────┘ └─────────────┘
+```mermaid
+graph TD
+    A[askfia.netlify.app] --> B[askfia-api.onrender.com]
+    B --> C[pyFIA]
+    C --> D[MotherDuck]
 ```
 
-## Configuration
+## API Usage
 
-```python
-from askfia import AskFIA
+The backend API is available at `https://askfia-api.onrender.com`.
 
-fia = AskFIA(
-    database="path/to/FIA_database.duckdb",
-    zarr_cache="path/to/gridfia_cache",
-    model="gpt-4",  # or claude-3, local llama, etc.
-    verbose=True
-)
-```
-
-## CLI Usage
+### Streaming Chat
 
 ```bash
-# Interactive mode
-askfia chat
-
-# Single query
-askfia query "Forest area in Maine"
-
-# Generate report
-askfia report "Pacific Northwest timber summary" --output report.pdf
+curl -X POST https://askfia-api.onrender.com/api/v1/chat/stream \
+  -H "Content-Type: application/json" \
+  -d '{"message": "What is the total forest area in Oregon?"}'
 ```
 
-## Ecosystem Integration
+### Direct Queries
 
-askFIA orchestrates the entire FIAtools suite:
+```bash
+# Forest area
+curl -X POST https://askfia-api.onrender.com/api/v1/query/area \
+  -H "Content-Type: application/json" \
+  -d '{"state": "OR"}'
 
-```python
-# This single query:
-fia.ask("Compare forest carbon between 2010 and 2020 in the Southeast")
+# Timber volume
+curl -X POST https://askfia-api.onrender.com/api/v1/query/volume \
+  -H "Content-Type: application/json" \
+  -d '{"state": "NC", "species": "loblolly pine"}'
 
-# Automatically:
-# 1. Uses pyFIA to query biomass estimates for both time periods
-# 2. Calculates carbon from biomass using standard conversion factors
-# 3. Computes change statistics with proper variance estimation
-# 4. Formats results with appropriate uncertainty bounds
+# Biomass
+curl -X POST https://askfia-api.onrender.com/api/v1/query/biomass \
+  -H "Content-Type: application/json" \
+  -d '{"state": "GA"}'
 ```
+
+### Health Check
+
+```bash
+curl https://askfia-api.onrender.com/health
+```
+
+## Local Development
+
+```bash
+# Clone the repository
+git clone https://github.com/mihiarc/askfia.git
+cd askfia
+
+# Install dependencies
+make install
+
+# Run frontend and backend together
+make dev
+
+# Or run separately:
+cd backend && uv run uvicorn askfia_api.main:app --reload
+cd frontend && npm run dev
+```
+
+### Environment Variables
+
+**Backend** (`backend/.env`):
+```
+ANTHROPIC_API_KEY=your-api-key
+MOTHERDUCK_TOKEN=your-token
+CORS_ORIGINS=http://localhost:3000
+```
+
+**Frontend** (`frontend/.env.local`):
+```
+NEXT_PUBLIC_API_URL=http://localhost:8000
+```
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|------------|
+| **Frontend** | Next.js 15, React 19, Tailwind CSS, shadcn/ui, Vercel AI SDK |
+| **Backend** | FastAPI, Pydantic v2, LangChain, Claude API |
+| **Data** | pyFIA, DuckDB, Polars, MotherDuck |
+| **Deployment** | Netlify (frontend), Render (backend), MotherDuck (data) |
 
 ## Coming Soon
 
@@ -160,7 +142,8 @@ fia.ask("Compare forest carbon between 2010 and 2020 in the Southeast")
 - [ ] Slack/Discord integration
 - [ ] Scheduled reports
 - [ ] Custom analysis templates
-- [ ] Multi-state comparisons
+- [ ] CLI tool
+- [ ] Python SDK
 
 ## Citation
 
@@ -180,5 +163,5 @@ MIT License — see [LICENSE](LICENSE) for details.
 ---
 
 <div align="center">
-  <sub>Built with 🌲 by <a href="https://github.com/mihiarc">Chris Mihiar</a> · USDA Forest Service Southern Research Station</sub>
+  <sub>Built by <a href="https://github.com/mihiarc">Chris Mihiar</a> · USDA Forest Service Southern Research Station</sub>
 </div>
