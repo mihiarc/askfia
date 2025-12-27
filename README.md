@@ -153,10 +153,6 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 }
 ```
 
-## License
-
-MIT License — see [LICENSE](LICENSE) for details.
-
 ---
 
 <div align="center">
