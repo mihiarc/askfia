@@ -1,12 +1,51 @@
 [project]
 name = "askfia-api"
-version = "0.2.0"
+version = "0.2.1"
 description = "AskFIA - AI Conversational Interface for Forest Inventory Analysis - Part of the FIA Python Ecosystem"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [
-    { name = "Chris Mihiar", email = "chris@example.com" }
+    { name = "Chris Mihiar", email = "28452317+mihiarc@users.noreply.github.com" }
+]
+keywords = [
+    # Core functionality
+    "askfia",
+    "fia",
+    "forest-inventory",
+    "ai",
+    "llm",
+    "natural-language",
+    "chatbot",
+    # Domain
+    "usda",
+    "forestry",
+    "conversational-ai",
+    "forest-data",
+    "query-interface",
+    # Technology
+    "langchain",
+    "fastapi",
+    "claude",
+    # Ecosystem
+    "fiatools",
+    "forest-service",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Natural Language :: English",
+    "Environment :: Console",
+    "Environment :: Web Environment",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Framework :: FastAPI",
 ]
 
 dependencies = [
@@ -37,9 +76,13 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/mihiarc/askfia"
+Homepage = "https://fiatools.org"
 Repository = "https://github.com/mihiarc/askfia"
+"Source Code" = "https://github.com/mihiarc/askfia"
 "Bug Tracker" = "https://github.com/mihiarc/askfia/issues"
+Changelog = "https://github.com/mihiarc/askfia/releases"
+"Live App" = "https://askfia.netlify.app"
+"FIA Ecosystem" = "https://fiatools.org"
 
 [build-system]
 requires = ["hatchling"]

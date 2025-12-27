@@ -1,20 +1,21 @@
 <div align="center">
-  <a href="https://askfia.netlify.app"><img src="https://fiatools.org/logos/askfia_logo.png" alt="askFIA" width="400"></a>
+  <a href="https://fiatools.org"><img src="https://fiatools.org/logos/askfia_logo.png" alt="askFIA" width="400"></a>
 
   <p><strong>Ask questions, get forest answers</strong></p>
 
   <p>
+    <a href="https://fiatools.org"><img src="https://img.shields.io/badge/FIAtools-Ecosystem-2E7D32" alt="FIAtools Ecosystem"></a>
     <a href="https://askfia.netlify.app"><img src="https://img.shields.io/badge/Try_it-askfia.netlify.app-006D6D" alt="Live App"></a>
     <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-006D6D" alt="License: MIT"></a>
     <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.11+-006D6D" alt="Python 3.11+"></a>
   </p>
 
   <p>
-    <sub>Part of the <a href="https://fiatools.org"><strong>FIAtools</strong></a> ecosystem:
-    <a href="https://github.com/mihiarc/pyfia">pyFIA</a> ·
-    <a href="https://github.com/mihiarc/gridfia">gridFIA</a> ·
-    <a href="https://github.com/mihiarc/pyfvs">pyFVS</a> ·
-    <a href="https://github.com/mihiarc/askfia">askFIA</a></sub>
+    <strong>Part of the <a href="https://fiatools.org">FIAtools Python Ecosystem</a></strong><br>
+    <a href="https://fiatools.org">pyFIA</a> ·
+    <a href="https://fiatools.org">gridFIA</a> ·
+    <a href="https://fiatools.org">pyFVS</a> ·
+    <a href="https://fiatools.org">askFIA</a>
   </p>
 </div>
 
@@ -142,6 +143,19 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 - [ ] Data downloads
 - [ ] Custom analysis templates
 
+## The FIAtools Ecosystem
+
+askFIA is part of the [FIAtools Python ecosystem](https://fiatools.org) - a unified suite of open-source tools for forest inventory analysis:
+
+| Tool | Purpose | Key Features |
+|------|---------|--------------|
+| [**pyFIA**](https://fiatools.org) | Survey & plot data | DuckDB backend, 10-100x faster than EVALIDator |
+| [**gridFIA**](https://fiatools.org) | Spatial raster analysis | 327 species at 30m resolution, Zarr storage |
+| [**pyFVS**](https://fiatools.org) | Growth simulation | Chapman-Richards curves, yield projections |
+| [**askFIA**](https://fiatools.org) | AI interface | Natural language queries for forest data |
+
+**[Explore the full ecosystem at fiatools.org](https://fiatools.org)**
+
 ## Citation
 
 ```bibtex
@@ -149,12 +163,13 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
   title = {askFIA: Conversational AI Interface for Forest Inventory Data},
   author = {Mihiar, Christopher},
   year = {2025},
-  url = {https://github.com/mihiarc/askfia}
+  url = {https://fiatools.org}
 }
 ```
 
 ---
 
 <div align="center">
+  <a href="https://fiatools.org"><strong>fiatools.org</strong></a> · Python Ecosystem for Forest Inventory Analysis<br>
   <sub>Built by <a href="https://github.com/mihiarc">Chris Mihiar</a> · USDA Forest Service Southern Research Station</sub>
 </div>
