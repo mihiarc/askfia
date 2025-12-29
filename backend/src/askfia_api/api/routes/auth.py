@@ -1,6 +1,7 @@
 """Authentication endpoints with JWT cookie-based tokens."""
 
 import logging
+import re
 from datetime import UTC, datetime, timedelta
 
 import bcrypt
@@ -9,14 +10,38 @@ from fastapi import APIRouter, Cookie, Response
 from pydantic import BaseModel, EmailStr
 
 from askfia_api.config import get_settings
-from askfia_api.services.email_storage import (
-    register_user,
-    validate_email,
-)
+from askfia_api.services.user_service import UserService
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
+
+# --- User Service Singleton ---
+
+_user_service: UserService | None = None
+
+
+def get_user_service() -> UserService:
+    """Get or create the user service singleton."""
+    global _user_service
+    if _user_service is None:
+        settings = get_settings()
+        _user_service = UserService(
+            db_path=settings.user_db_path,
+            daily_limit=settings.daily_query_limit,
+        )
+    return _user_service
+
+
+# Email validation regex (RFC 5322 simplified)
+EMAIL_REGEX = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
+
+
+def validate_email(email: str) -> bool:
+    """Validate email format."""
+    if not email or len(email) > 254:
+        return False
+    return bool(EMAIL_REGEX.match(email.lower()))
 
 
 # --- Request/Response Models ---
@@ -220,7 +245,7 @@ async def signup(request: EmailSignupRequest, response: Response) -> AuthRespons
 
     This endpoint:
     - Validates email format
-    - Creates a new user or returns existing user
+    - Creates a new user or returns existing user (stored in MotherDuck)
     - Issues JWT tokens with email in payload
     """
     email = request.email.lower().strip()
@@ -233,18 +258,19 @@ async def signup(request: EmailSignupRequest, response: Response) -> AuthRespons
         )
 
     try:
-        # Register user (or get existing)
-        user, is_new = register_user(email)
+        # Register user (or get existing) using MotherDuck-backed service
+        user_service = get_user_service()
+        user, is_new = user_service.register_user(email)
 
         # Set auth cookies with email info
-        set_auth_cookies(response, email=user["email"], user_id=user["id"])
+        set_auth_cookies(response, email=user.email, user_id=user.id)
 
         if is_new:
             logger.info(f"New user registered: {email}")
             return AuthResponse(
                 authenticated=True,
                 message="Welcome! Your account has been created.",
-                email=user["email"],
+                email=user.email,
                 is_new_user=True,
             )
         else:
@@ -252,7 +278,7 @@ async def signup(request: EmailSignupRequest, response: Response) -> AuthRespons
             return AuthResponse(
                 authenticated=True,
                 message="Welcome back!",
-                email=user["email"],
+                email=user.email,
                 is_new_user=False,
             )
 

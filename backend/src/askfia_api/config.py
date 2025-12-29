@@ -67,6 +67,18 @@ class Settings(BaseSettings):
     # MotherDuck (serverless DuckDB - primary storage)
     motherduck_token: str | None = Field(default=None, alias="MOTHERDUCK_TOKEN")
 
+    # User management (MotherDuck-backed in production, local file for dev)
+    user_db_path: str = Field(
+        default="./data/users.duckdb",
+        alias="USER_DB_PATH",
+        description="DuckDB/MotherDuck path for user storage (md:database_name for cloud)",
+    )
+    daily_query_limit: int = Field(
+        default=0,  # 0 = unlimited
+        alias="DAILY_QUERY_LIMIT",
+        description="Maximum AI queries per day per user (0 = unlimited)",
+    )
+
     # Usage tracking
     usage_storage_dir: str = "./data/usage"
 
