@@ -23,9 +23,10 @@ askfia/
 
 | Property | Value |
 |----------|-------|
-| Service Name | `askfia-api` |
+| Service Name | `askfia` |
+| Service Slug | `pyfia-api` |
 | Service ID | `srv-d53fn7khg0os738rbgr0` |
-| URL | https://askfia-api.onrender.com |
+| URL | https://pyfia-api.onrender.com |
 | Dashboard | https://dashboard.render.com/web/srv-d53fn7khg0os738rbgr0 |
 | Region | Oregon |
 | Plan | Standard (2GB RAM) |
@@ -47,6 +48,8 @@ uvicorn askfia_api.main:app --host 0.0.0.0 --port $PORT
 **Environment Variables (Render):**
 - `ANTHROPIC_API_KEY` - Claude API key (secret)
 - `MOTHERDUCK_TOKEN` - MotherDuck authentication (secret)
+- `USER_DB_PATH` - User storage path (default: `md:askfia` for MotherDuck)
+- `DAILY_QUERY_LIMIT` - Max queries per user per day (default: 0 = unlimited)
 - `CORS_ORIGINS` - Allowed origins for CORS
 - `FIA_S3_BUCKET`, `S3_ENDPOINT_URL`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` - R2/S3 storage (optional)
 - `LOG_LEVEL` - Logging level (default: INFO)
@@ -65,14 +68,17 @@ uvicorn askfia_api.main:app --host 0.0.0.0 --port $PORT
 | Plugin | `@netlify/plugin-nextjs` |
 
 **Environment Variables (Netlify):**
-- `NEXT_PUBLIC_API_URL` - Backend API URL (https://askfia-api.onrender.com)
+- `NEXT_PUBLIC_API_URL` - Backend API URL (https://pyfia-api.onrender.com)
 
 ### MotherDuck (Serverless DuckDB)
 
-- **Purpose:** Serverless analytical database for FIA data queries
+- **Purpose:** Serverless analytical database for FIA data queries and user storage
 - **Dashboard:** https://app.motherduck.com
 - **Authentication:** `MOTHERDUCK_TOKEN` environment variable
-- **Usage:** Primary data tier for production (replaces local DuckDB files)
+- **Databases:**
+  - `fia_*` (e.g., `fia_ga`, `fia_nc`) - FIA data per state
+  - `askfia` - User accounts and query usage tracking
+- **Usage:** Primary data tier for production (persists across deploys)
 
 ## Storage Tiers
 
@@ -109,6 +115,11 @@ make lint
 |----------|--------|-------------|
 | `/health` | GET | Health check |
 | `/health/ready` | GET | Readiness (PyFIA + Anthropic) |
+| `/api/v1/auth/signup` | POST | Register/login with email |
+| `/api/v1/auth/login` | POST | Password login (legacy) |
+| `/api/v1/auth/verify` | GET | Verify JWT token |
+| `/api/v1/auth/refresh` | POST | Refresh access token |
+| `/api/v1/auth/logout` | POST | Clear auth cookies |
 | `/api/v1/chat/stream` | POST | Streaming chat with Claude |
 | `/api/v1/query/area` | POST | Forest area queries |
 | `/api/v1/query/volume` | POST | Timber volume queries |
