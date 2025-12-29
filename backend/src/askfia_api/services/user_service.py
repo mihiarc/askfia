@@ -51,6 +51,10 @@ class UserService:
 
     def _ensure_database(self) -> None:
         """Create database and tables if they don't exist."""
+        # For MotherDuck, first ensure the database exists
+        if self.is_motherduck:
+            self._ensure_motherduck_database()
+
         with self._get_connection() as conn:
             # Users table
             conn.execute("""
@@ -78,6 +82,31 @@ class UserService:
             """)
 
             logger.info(f"User database initialized at {self.db_path}")
+
+    def _ensure_motherduck_database(self) -> None:
+        """Ensure the MotherDuck database exists, creating it if necessary."""
+        # Extract database name from path (e.g., "md:askfia" -> "askfia")
+        db_name = self.db_path.replace("md:", "")
+
+        token = os.environ.get("MOTHERDUCK_TOKEN") or os.environ.get("motherduck_token")
+        if not token:
+            raise RuntimeError("MotherDuck token not configured")
+
+        # Connect to MotherDuck without specifying a database
+        conn = duckdb.connect(f"md:?motherduck_token={token}")
+        try:
+            # Check if database exists
+            result = conn.execute("SHOW DATABASES").fetchall()
+            existing_dbs = [row[0] for row in result]
+
+            if db_name not in existing_dbs:
+                logger.info(f"Creating MotherDuck database: {db_name}")
+                conn.execute(f"CREATE DATABASE IF NOT EXISTS {db_name}")
+                logger.info(f"Created MotherDuck database: {db_name}")
+            else:
+                logger.debug(f"MotherDuck database already exists: {db_name}")
+        finally:
+            conn.close()
 
     @contextmanager
     def _get_connection(self):
