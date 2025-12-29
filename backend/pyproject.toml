@@ -75,6 +75,12 @@ dev = [
     "ruff>=0.8.0",
     "mypy>=1.13.0",
 ]
+gridfia = [
+    "gridfia>=0.3.0",
+]
+all = [
+    "gridfia>=0.3.0",
+]
 
 [project.urls]
 Homepage = "https://fiatools.org"
