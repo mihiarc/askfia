@@ -12,9 +12,16 @@ from pydantic import BaseModel, Field
 from ..config import settings
 from .fia_service import fia_service
 from .forest_types import get_forest_type_name
+from .gridfia_service import GRIDFIA_AVAILABLE
 from .usage_tracker import usage_tracker
 
 logger = logging.getLogger(__name__)
+
+# Conditionally import GridFIA tools
+if GRIDFIA_AVAILABLE:
+    from .gridfia_tools import GRIDFIA_TOOLS
+else:
+    GRIDFIA_TOOLS = []
 
 
 # ============================================================================
@@ -1031,8 +1038,8 @@ async def lookup_species(
     return response
 
 
-# All available tools
-TOOLS = [
+# All available tools - PyFIA core tools
+PYFIA_TOOLS = [
     query_forest_area,
     query_timber_volume,
     query_biomass_carbon,
@@ -1049,8 +1056,11 @@ TOOLS = [
     lookup_species,
 ]
 
-# System prompt
-SYSTEM_PROMPT = """You are a forest inventory analyst with access to the USDA Forest Service
+# Combine PyFIA and GridFIA tools (GridFIA tools only included if available)
+TOOLS = PYFIA_TOOLS + GRIDFIA_TOOLS
+
+# System prompt - base capabilities
+_SYSTEM_PROMPT_BASE = """You are a forest inventory analyst with access to the USDA Forest Service
 Forest Inventory and Analysis (FIA) database through pyFIA.
 
 ## Your Capabilities
@@ -1089,6 +1099,40 @@ You can query validated forest inventory data including:
 - "How many trees per acre are in Fulton County, Georgia?"
 """
 
+# GridFIA capabilities addition
+_GRIDFIA_PROMPT_ADDITION = """
+
+## Spatial Analysis Capabilities (GridFIA)
+
+You also have access to BIGMAP 2018 raster data at 30m resolution through GridFIA:
+
+- **Species diversity**: Shannon index, Simpson index, species richness per pixel
+- **Biomass mapping**: Spatially continuous aboveground biomass estimates
+- **Species information**: List of 300+ tree species with codes and names
+
+### When to Use GridFIA vs PyFIA
+
+- **PyFIA (survey-based)**: For statistical estimates with standard errors (SE%).
+  Best for official reporting and when uncertainty quantification is needed.
+
+- **GridFIA (model-based)**: For spatially continuous patterns at 30m resolution.
+  Best for mapping, visualization, and understanding spatial variation.
+
+Both complement each other - PyFIA for rigorous statistics, GridFIA for spatial patterns.
+
+### GridFIA Example Queries
+
+- "What is the species diversity in Wake County, NC?"
+- "Show me the Shannon diversity index for California"
+- "What species are available in BIGMAP data?"
+- "What is the total biomass in Durham County?"
+"""
+
+# Build final system prompt based on available capabilities
+SYSTEM_PROMPT = _SYSTEM_PROMPT_BASE
+if GRIDFIA_AVAILABLE:
+    SYSTEM_PROMPT += _GRIDFIA_PROMPT_ADDITION
+
 
 class FIAAgent:
     """Agent for handling FIA-related queries."""
@@ -1101,6 +1145,10 @@ class FIAAgent:
             max_tokens=4096,
         )
         self.llm_with_tools = self.llm.bind_tools(TOOLS)
+        logger.info(
+            f"FIAAgent initialized with {len(PYFIA_TOOLS)} PyFIA tools "
+            f"and {len(GRIDFIA_TOOLS)} GridFIA tools"
+        )
 
     async def stream(
         self,
