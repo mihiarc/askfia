@@ -1059,10 +1059,6 @@ PYFIA_TOOLS = [
 # Combine PyFIA and GridFIA tools (GridFIA tools only included if available)
 TOOLS = PYFIA_TOOLS + GRIDFIA_TOOLS
 
-logger.info(
-    f"Registered {len(PYFIA_TOOLS)} PyFIA tools and {len(GRIDFIA_TOOLS)} GridFIA tools"
-)
-
 # System prompt - base capabilities
 _SYSTEM_PROMPT_BASE = """You are a forest inventory analyst with access to the USDA Forest Service
 Forest Inventory and Analysis (FIA) database through pyFIA.
@@ -1149,6 +1145,10 @@ class FIAAgent:
             max_tokens=4096,
         )
         self.llm_with_tools = self.llm.bind_tools(TOOLS)
+        logger.info(
+            f"FIAAgent initialized with {len(PYFIA_TOOLS)} PyFIA tools "
+            f"and {len(GRIDFIA_TOOLS)} GridFIA tools"
+        )
 
     async def stream(
         self,
