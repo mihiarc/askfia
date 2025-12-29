@@ -551,3 +551,305 @@ def reset_gridfia_service() -> None:
     global _gridfia_service
     with _gridfia_service_lock:
         _gridfia_service = None
+
+
+class GridFIAServiceExtended(GridFIAService):
+    """Extended service with additional query methods for full implementation.
+
+    Adds:
+    - query_dominant_species: Find the dominant species in a location
+    - compare_locations: Compare diversity/biomass between locations
+    - query_species_biomass: Query biomass for specific species
+    - list_calculations: List available calculations
+    """
+
+    async def query_dominant_species(
+        self,
+        state: str,
+        county: str | None = None,
+        top_n: int = 5,
+    ) -> dict[str, Any]:
+        """Find the dominant tree species in a location by biomass.
+
+        Args:
+            state: State name or two-letter abbreviation.
+            county: Optional county name for finer resolution.
+            top_n: Number of top species to return (default 5).
+
+        Returns:
+            Dictionary containing dominant species information.
+        """
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(
+            None, self._calculate_dominant_species_sync, state, county, top_n
+        )
+        return result
+
+    def _calculate_dominant_species_sync(
+        self, state: str, county: str | None, top_n: int
+    ) -> dict[str, Any]:
+        """Synchronous dominant species calculation (runs in thread pool)."""
+        # Ensure Zarr store exists
+        zarr_path = self._ensure_zarr_exists(state, county)
+
+        import zarr
+        import numpy as np
+
+        # Open the Zarr store and analyze species biomass
+        store = zarr.open(zarr_path, mode='r')
+        biomass = store['biomass'][:]
+
+        # Get species codes and names
+        species_codes = list(store['species_codes'][:])
+        species_names = list(store['species_names'][:])
+
+        # Calculate total biomass per species (excluding nodata)
+        species_totals = []
+        for i in range(len(species_codes)):
+            if species_codes[i] == '0000':  # Skip total biomass layer
+                continue
+            layer = biomass[i]
+            valid_mask = (layer > 0) & (layer != -9999)
+            total = float(np.sum(layer[valid_mask])) if np.any(valid_mask) else 0.0
+            mean = float(np.mean(layer[valid_mask])) if np.any(valid_mask) else 0.0
+            pixel_count = int(np.sum(valid_mask))
+
+            if total > 0:
+                species_totals.append({
+                    'species_code': species_codes[i],
+                    'species_name': species_names[i] if i < len(species_names) else 'Unknown',
+                    'total_biomass_mg': total * PIXEL_AREA_HA,  # Convert to Mg
+                    'mean_biomass_mgha': mean,
+                    'pixel_count': pixel_count,
+                })
+
+        # Sort by total biomass and get top N
+        species_totals.sort(key=lambda x: x['total_biomass_mg'], reverse=True)
+        top_species = species_totals[:top_n]
+
+        location_name = f"{county}, {state}" if county else state
+
+        return {
+            "location": location_name,
+            "top_n": top_n,
+            "total_species_present": len(species_totals),
+            "dominant_species": top_species,
+        }
+
+    async def compare_locations(
+        self,
+        location1: dict[str, str],
+        location2: dict[str, str],
+        metric: str = "diversity",
+    ) -> dict[str, Any]:
+        """Compare two locations by diversity or biomass.
+
+        Args:
+            location1: Dict with 'state' and optional 'county' keys.
+            location2: Dict with 'state' and optional 'county' keys.
+            metric: 'diversity' (Shannon index) or 'biomass'.
+
+        Returns:
+            Dictionary containing comparison results.
+        """
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(
+            None,
+            self._compare_locations_sync,
+            location1,
+            location2,
+            metric
+        )
+        return result
+
+    def _compare_locations_sync(
+        self,
+        location1: dict[str, str],
+        location2: dict[str, str],
+        metric: str,
+    ) -> dict[str, Any]:
+        """Synchronous location comparison (runs in thread pool)."""
+        results = {}
+
+        for i, loc in enumerate([location1, location2], 1):
+            state = loc['state']
+            county = loc.get('county')
+
+            zarr_path = self._ensure_zarr_exists(state, county)
+
+            if metric == "diversity":
+                # Run Shannon diversity calculation
+                calc_results = self._api.calculate_metrics(
+                    zarr_path=zarr_path,
+                    calculations=["shannon_diversity"],
+                )
+                stats = _compute_raster_statistics(calc_results[0].output_path)
+            else:  # biomass
+                calc_results = self._api.calculate_metrics(
+                    zarr_path=zarr_path,
+                    calculations=["total_biomass"],
+                )
+                stats = _compute_raster_statistics(calc_results[0].output_path)
+
+            location_name = f"{county}, {state}" if county else state
+            results[f"location{i}"] = {
+                "name": location_name,
+                "mean": stats.get("mean", 0.0),
+                "std": stats.get("std", 0.0),
+                "min": stats.get("min", 0.0),
+                "max": stats.get("max", 0.0),
+                "pixel_count": stats.get("count", 0),
+            }
+
+        # Calculate comparison metrics
+        loc1 = results["location1"]
+        loc2 = results["location2"]
+
+        difference = loc1["mean"] - loc2["mean"]
+        if loc2["mean"] != 0:
+            percent_difference = (difference / loc2["mean"]) * 100
+        else:
+            percent_difference = 0.0 if loc1["mean"] == 0 else float('inf')
+
+        return {
+            "metric": metric,
+            "location1": loc1,
+            "location2": loc2,
+            "comparison": {
+                "difference": difference,
+                "percent_difference": percent_difference,
+                "higher": loc1["name"] if loc1["mean"] > loc2["mean"] else loc2["name"],
+            }
+        }
+
+    async def query_species_biomass(
+        self,
+        state: str,
+        species_code: str,
+        county: str | None = None,
+    ) -> dict[str, Any]:
+        """Query biomass for a specific species.
+
+        Args:
+            state: State name or two-letter abbreviation.
+            species_code: 4-digit FIA species code.
+            county: Optional county name for finer resolution.
+
+        Returns:
+            Dictionary containing species-specific biomass statistics.
+        """
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(
+            None,
+            self._query_species_biomass_sync,
+            state,
+            species_code,
+            county
+        )
+        return result
+
+    def _query_species_biomass_sync(
+        self, state: str, species_code: str, county: str | None
+    ) -> dict[str, Any]:
+        """Synchronous species biomass query (runs in thread pool)."""
+        # Ensure Zarr store exists with the requested species
+        zarr_path = self._ensure_zarr_exists(state, county, species_codes=[species_code])
+
+        import zarr
+        import numpy as np
+
+        store = zarr.open(zarr_path, mode='r')
+        species_codes = list(store['species_codes'][:])
+        species_names = list(store['species_names'][:])
+
+        # Find the species index
+        try:
+            species_idx = species_codes.index(species_code)
+        except ValueError:
+            # Species not found in the store, return empty result
+            location_name = f"{county}, {state}" if county else state
+            return {
+                "location": location_name,
+                "species_code": species_code,
+                "species_name": "Unknown",
+                "found": False,
+                "message": f"Species {species_code} not found in {location_name}",
+            }
+
+        species_name = species_names[species_idx] if species_idx < len(species_names) else "Unknown"
+
+        # Extract biomass for this species
+        biomass_layer = store['biomass'][species_idx]
+        valid_mask = (biomass_layer > 0) & (biomass_layer != -9999)
+        valid_data = biomass_layer[valid_mask]
+
+        if len(valid_data) == 0:
+            location_name = f"{county}, {state}" if county else state
+            return {
+                "location": location_name,
+                "species_code": species_code,
+                "species_name": species_name,
+                "found": True,
+                "has_data": False,
+                "message": f"Species {species_name} has no biomass data in {location_name}",
+            }
+
+        pixel_count = int(len(valid_data))
+        mean_biomass = float(np.mean(valid_data))
+        total_biomass = float(np.sum(valid_data)) * PIXEL_AREA_HA
+
+        location_name = f"{county}, {state}" if county else state
+
+        return {
+            "location": location_name,
+            "species_code": species_code,
+            "species_name": species_name,
+            "found": True,
+            "has_data": True,
+            "mean_biomass_mgha": mean_biomass,
+            "std": float(np.std(valid_data)),
+            "min": float(np.min(valid_data)),
+            "max": float(np.max(valid_data)),
+            "total_biomass_mg": total_biomass,
+            "pixel_count": pixel_count,
+            "area_hectares": pixel_count * PIXEL_AREA_HA,
+        }
+
+    def list_calculations(self) -> list[str]:
+        """List all available calculations.
+
+        Returns:
+            List of calculation names that can be run.
+        """
+        return self._api.list_calculations()
+
+
+# Override the get function to use the extended service
+_gridfia_service_extended: GridFIAServiceExtended | None = None
+_gridfia_service_extended_lock = threading.Lock()
+
+
+def get_gridfia_service_extended() -> GridFIAServiceExtended:
+    """Get or create the extended GridFIA service singleton (thread-safe).
+
+    Returns:
+        GridFIAServiceExtended instance.
+
+    Raises:
+        ImportError: If GridFIA is not installed.
+    """
+    global _gridfia_service_extended
+
+    if _gridfia_service_extended is None:
+        with _gridfia_service_extended_lock:
+            if _gridfia_service_extended is None:
+                _gridfia_service_extended = GridFIAServiceExtended()
+
+    return _gridfia_service_extended
+
+
+def reset_gridfia_service_extended() -> None:
+    """Reset the extended GridFIA service singleton (for testing)."""
+    global _gridfia_service_extended
+    with _gridfia_service_extended_lock:
+        _gridfia_service_extended = None

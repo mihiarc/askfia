@@ -484,6 +484,254 @@ class TestBiomassTool:
             assert "Low biomass" in result or "young forests" in result.lower()
 
 
+@pytest.mark.skipif(not GRIDFIA_AVAILABLE, reason="GridFIA not installed")
+class TestExtendedService:
+    """Test the extended GridFIA service methods."""
+
+    def test_extended_service_initialization(self):
+        """Test that the extended service can be initialized."""
+        from askfia_api.services.gridfia_service import GridFIAServiceExtended
+
+        service = GridFIAServiceExtended()
+        assert service is not None
+        assert service._api is not None
+
+    def test_list_calculations(self):
+        """Test listing available calculations."""
+        from askfia_api.services.gridfia_service import GridFIAServiceExtended
+
+        service = GridFIAServiceExtended()
+        calcs = service.list_calculations()
+
+        assert isinstance(calcs, list)
+        assert len(calcs) > 0
+        assert "shannon_diversity" in calcs
+        assert "total_biomass" in calcs
+
+
+@pytest.mark.skipif(not GRIDFIA_AVAILABLE, reason="GridFIA not installed")
+class TestNewTools:
+    """Test the new GridFIA tools added in full implementation."""
+
+    @pytest.mark.asyncio
+    async def test_dominant_species_tool_returns_markdown(self):
+        """Test that dominant species tool returns properly formatted markdown."""
+        from askfia_api.services.gridfia_tools import query_dominant_species
+
+        # Mock the service to avoid actual data downloads
+        mock_result = {
+            "location": "Wake, NC",
+            "top_n": 5,
+            "total_species_present": 45,
+            "dominant_species": [
+                {
+                    "species_code": "0131",
+                    "species_name": "Loblolly Pine",
+                    "total_biomass_mg": 2500000.0,
+                    "mean_biomass_mgha": 120.5,
+                    "pixel_count": 25000,
+                },
+                {
+                    "species_code": "0316",
+                    "species_name": "Red Maple",
+                    "total_biomass_mg": 1800000.0,
+                    "mean_biomass_mgha": 85.2,
+                    "pixel_count": 22000,
+                },
+            ],
+        }
+
+        with patch(
+            "askfia_api.services.gridfia_tools.get_gridfia_service_extended"
+        ) as mock_get_service:
+            mock_service = MagicMock()
+            mock_service.query_dominant_species = AsyncMock(return_value=mock_result)
+            mock_get_service.return_value = mock_service
+
+            result = await query_dominant_species.ainvoke({
+                "state": "NC",
+                "county": "Wake",
+                "top_n": 5,
+            })
+
+            assert "Dominant Tree Species" in result
+            assert "Wake" in result
+            assert "Loblolly Pine" in result
+            assert "0131" in result
+            assert "BIGMAP" in result
+
+    @pytest.mark.asyncio
+    async def test_compare_locations_tool_returns_markdown(self):
+        """Test that compare locations tool returns properly formatted markdown."""
+        from askfia_api.services.gridfia_tools import compare_gridfia_locations
+
+        mock_result = {
+            "metric": "diversity",
+            "location1": {
+                "name": "Wake, NC",
+                "mean": 1.8,
+                "std": 0.4,
+                "min": 0.0,
+                "max": 2.8,
+                "pixel_count": 100000,
+            },
+            "location2": {
+                "name": "Durham, NC",
+                "mean": 1.5,
+                "std": 0.3,
+                "min": 0.0,
+                "max": 2.5,
+                "pixel_count": 50000,
+            },
+            "comparison": {
+                "difference": 0.3,
+                "percent_difference": 20.0,
+                "higher": "Wake, NC",
+            }
+        }
+
+        with patch(
+            "askfia_api.services.gridfia_tools.get_gridfia_service_extended"
+        ) as mock_get_service:
+            mock_service = MagicMock()
+            mock_service.compare_locations = AsyncMock(return_value=mock_result)
+            mock_get_service.return_value = mock_service
+
+            result = await compare_gridfia_locations.ainvoke({
+                "state1": "NC",
+                "county1": "Wake",
+                "state2": "NC",
+                "county2": "Durham",
+                "metric": "diversity",
+            })
+
+            assert "Forest Comparison" in result
+            assert "Wake" in result
+            assert "Durham" in result
+            assert "Higher" in result
+            assert "BIGMAP" in result
+
+    @pytest.mark.asyncio
+    async def test_compare_locations_invalid_metric(self):
+        """Test that compare tool handles invalid metric."""
+        from askfia_api.services.gridfia_tools import compare_gridfia_locations
+
+        result = await compare_gridfia_locations.ainvoke({
+            "state1": "NC",
+            "state2": "SC",
+            "metric": "invalid_metric",
+        })
+
+        assert "Invalid metric" in result
+
+    @pytest.mark.asyncio
+    async def test_species_biomass_tool_returns_markdown(self):
+        """Test that species-specific biomass tool returns properly formatted markdown."""
+        from askfia_api.services.gridfia_tools import query_species_specific_biomass
+
+        mock_result = {
+            "location": "Wake, NC",
+            "species_code": "0131",
+            "species_name": "Loblolly Pine",
+            "found": True,
+            "has_data": True,
+            "mean_biomass_mgha": 120.5,
+            "std": 45.2,
+            "min": 0.0,
+            "max": 350.0,
+            "total_biomass_mg": 2500000.0,
+            "pixel_count": 25000,
+            "area_hectares": 2250.0,
+        }
+
+        with patch(
+            "askfia_api.services.gridfia_tools.get_gridfia_service_extended"
+        ) as mock_get_service:
+            mock_service = MagicMock()
+            mock_service.query_species_biomass = AsyncMock(return_value=mock_result)
+            mock_get_service.return_value = mock_service
+
+            result = await query_species_specific_biomass.ainvoke({
+                "state": "NC",
+                "species_code": "0131",
+                "county": "Wake",
+            })
+
+            assert "Loblolly Pine" in result
+            assert "0131" in result
+            assert "Mean biomass" in result
+            assert "carbon" in result.lower()
+
+    @pytest.mark.asyncio
+    async def test_species_biomass_invalid_code(self):
+        """Test that invalid species code returns error message."""
+        from askfia_api.services.gridfia_tools import query_species_specific_biomass
+
+        result = await query_species_specific_biomass.ainvoke({
+            "state": "NC",
+            "species_code": "abc",  # Invalid - not 4 digits
+        })
+
+        assert "Invalid species code" in result
+
+    @pytest.mark.asyncio
+    async def test_species_biomass_not_found(self):
+        """Test that missing species returns appropriate message."""
+        from askfia_api.services.gridfia_tools import query_species_specific_biomass
+
+        mock_result = {
+            "location": "Wake, NC",
+            "species_code": "9999",
+            "species_name": "Unknown",
+            "found": False,
+            "message": "Species 9999 not found in Wake, NC",
+        }
+
+        with patch(
+            "askfia_api.services.gridfia_tools.get_gridfia_service_extended"
+        ) as mock_get_service:
+            mock_service = MagicMock()
+            mock_service.query_species_biomass = AsyncMock(return_value=mock_result)
+            mock_get_service.return_value = mock_service
+
+            result = await query_species_specific_biomass.ainvoke({
+                "state": "NC",
+                "species_code": "9999",
+                "county": "Wake",
+            })
+
+            assert "not found" in result.lower()
+
+
+@pytest.mark.skipif(not GRIDFIA_AVAILABLE, reason="GridFIA not installed")
+class TestToolCount:
+    """Test that all tools are properly registered."""
+
+    def test_tool_count(self):
+        """Test that we have 6 GridFIA tools registered."""
+        from askfia_api.services.gridfia_tools import GRIDFIA_TOOLS
+
+        assert len(GRIDFIA_TOOLS) == 6
+
+    def test_all_tools_present(self):
+        """Test that all expected tools are present."""
+        from askfia_api.services.gridfia_tools import GRIDFIA_TOOLS
+
+        tool_names = [t.name for t in GRIDFIA_TOOLS]
+
+        expected_tools = [
+            "query_gridfia_species_list",
+            "query_species_diversity",
+            "query_gridfia_biomass",
+            "query_dominant_species",
+            "compare_gridfia_locations",
+            "query_species_specific_biomass",
+        ]
+
+        for tool_name in expected_tools:
+            assert tool_name in tool_names, f"Missing tool: {tool_name}"
+
+
 # Manual test runner for development
 async def run_manual_tests():
     """Run manual tests for development verification."""

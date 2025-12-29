@@ -13,7 +13,11 @@ import logging
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field
 
-from .gridfia_service import GRIDFIA_AVAILABLE, get_gridfia_service
+from .gridfia_service import (
+    GRIDFIA_AVAILABLE,
+    get_gridfia_service,
+    get_gridfia_service_extended,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +81,75 @@ class GridFIABiomassInput(BaseModel):
         default=None,
         description=(
             "County name for finer resolution (e.g., 'Durham', 'Durham County'). "
+            "If not provided, analyzes the entire state."
+        ),
+    )
+
+
+class DominantSpeciesInput(BaseModel):
+    """Input for dominant species query."""
+
+    state: str = Field(
+        description=(
+            "State name or two-letter abbreviation (e.g., 'NC', 'North Carolina')"
+        ),
+    )
+    county: str | None = Field(
+        default=None,
+        description=(
+            "County name for finer resolution (e.g., 'Wake', 'Wake County'). "
+            "If not provided, analyzes the entire state."
+        ),
+    )
+    top_n: int = Field(
+        default=5,
+        description="Number of top species to return (default 5, max 20).",
+    )
+
+
+class CompareLocationsInput(BaseModel):
+    """Input for comparing two locations."""
+
+    state1: str = Field(
+        description="First state name or abbreviation (e.g., 'NC')",
+    )
+    county1: str | None = Field(
+        default=None,
+        description="First county name (optional)",
+    )
+    state2: str = Field(
+        description="Second state name or abbreviation (e.g., 'SC')",
+    )
+    county2: str | None = Field(
+        default=None,
+        description="Second county name (optional)",
+    )
+    metric: str = Field(
+        default="diversity",
+        description=(
+            "Metric to compare. Options: 'diversity' (Shannon index), 'biomass' (mean Mg/ha)"
+        ),
+    )
+
+
+class SpeciesBiomassInput(BaseModel):
+    """Input for species-specific biomass query."""
+
+    state: str = Field(
+        description=(
+            "State name or two-letter abbreviation (e.g., 'NC', 'North Carolina')"
+        ),
+    )
+    species_code: str = Field(
+        description=(
+            "4-digit FIA species code (e.g., '0131' for Loblolly Pine, "
+            "'0316' for Red Maple). Use query_gridfia_species_list to find codes."
+        ),
+    )
+    county: str | None = Field(
+        default=None,
+        description=(
+            "County name for finer resolution (e.g., 'Wake'). "
             "If not provided, analyzes the entire state."
         ),
     )
@@ -324,6 +397,236 @@ async def query_gridfia_biomass(
         return f"Error calculating biomass: {e}"
 
 
+@tool(args_schema=DominantSpeciesInput)
+async def query_dominant_species(
+    state: str,
+    county: str | None = None,
+    top_n: int = 5,
+) -> str:
+    """
+    Find the dominant tree species in a location by total biomass.
+
+    Use for questions about:
+    - What are the most common trees in an area
+    - Which species dominate a forest region
+    - What is the primary tree cover in a county or state
+    - Ranking species by abundance/biomass
+    - Understanding forest composition
+    """
+    if not GRIDFIA_AVAILABLE:
+        return "GridFIA is not installed. Spatial analysis tools are unavailable."
+
+    # Validate top_n
+    top_n = min(max(top_n, 1), 20)
+
+    try:
+        service = get_gridfia_service_extended()
+        result = await service.query_dominant_species(
+            state=state,
+            county=county,
+            top_n=top_n,
+        )
+
+        location = result["location"]
+
+        response = f"**Dominant Tree Species - {location}**\n\n"
+        response += f"*Top {top_n} species by total biomass (BIGMAP 2018)*\n\n"
+        response += f"Total species with presence: {result['total_species_present']}\n\n"
+
+        response += "| Rank | Species | Code | Total Biomass | Mean Mg/ha |\n"
+        response += "|------|---------|------|---------------|------------|\n"
+
+        for i, sp in enumerate(result["dominant_species"], 1):
+            total_mg = sp["total_biomass_mg"]
+            if total_mg >= 1_000_000:
+                total_str = f"{total_mg / 1_000_000:.2f}M tonnes"
+            elif total_mg >= 1_000:
+                total_str = f"{total_mg / 1_000:.1f}K tonnes"
+            else:
+                total_str = f"{total_mg:.0f} tonnes"
+
+            response += (
+                f"| {i} | {sp['species_name']} | {sp['species_code']} | "
+                f"{total_str} | {sp['mean_biomass_mgha']:.1f} |\n"
+            )
+
+        response += "\n*Data source: USDA Forest Service BIGMAP 2018 (30m resolution)*"
+
+        return response
+
+    except Exception as e:
+        logger.exception(f"Error finding dominant species for {state} {county or ''}")
+        return f"Error finding dominant species: {e}"
+
+
+@tool(args_schema=CompareLocationsInput)
+async def compare_gridfia_locations(
+    state1: str,
+    county1: str | None = None,
+    state2: str = "",
+    county2: str | None = None,
+    metric: str = "diversity",
+) -> str:
+    """
+    Compare forest diversity or biomass between two locations.
+
+    Use for questions about:
+    - Which area has higher species diversity
+    - Comparing biomass between counties or states
+    - Regional forest composition differences
+    - Identifying more productive forest regions
+    - Biodiversity comparisons
+    """
+    if not GRIDFIA_AVAILABLE:
+        return "GridFIA is not installed. Spatial analysis tools are unavailable."
+
+    if not state2:
+        return "Error: Please provide both locations to compare (state2 is required)."
+
+    # Validate metric
+    valid_metrics = ["diversity", "biomass"]
+    if metric.lower() not in valid_metrics:
+        return f"Invalid metric: {metric}. Valid options: {', '.join(valid_metrics)}"
+
+    try:
+        service = get_gridfia_service_extended()
+        result = await service.compare_locations(
+            location1={"state": state1, "county": county1},
+            location2={"state": state2, "county": county2},
+            metric=metric.lower(),
+        )
+
+        loc1 = result["location1"]
+        loc2 = result["location2"]
+        comparison = result["comparison"]
+
+        metric_name = metric.lower()
+        if metric_name == "diversity":
+            unit = "(Shannon Index)"
+            interpretation = (
+                "Higher Shannon values indicate greater species diversity. "
+                "Values typically range from 0 to ~4."
+            )
+        else:
+            unit = "(Mg/ha)"
+            interpretation = (
+                "Higher biomass indicates denser forest cover or larger trees."
+            )
+
+        response = f"**Forest Comparison: {loc1['name']} vs {loc2['name']}**\n\n"
+        response += f"*Metric: {metric_name.title()} {unit}*\n\n"
+
+        response += "| Location | Mean | Std Dev | Range | Pixels |\n"
+        response += "|----------|------|---------|-------|--------|\n"
+        response += (
+            f"| {loc1['name']} | {loc1['mean']:.2f} | {loc1['std']:.2f} | "
+            f"{loc1['min']:.2f}-{loc1['max']:.2f} | {loc1['pixel_count']:,} |\n"
+        )
+        response += (
+            f"| {loc2['name']} | {loc2['mean']:.2f} | {loc2['std']:.2f} | "
+            f"{loc2['min']:.2f}-{loc2['max']:.2f} | {loc2['pixel_count']:,} |\n"
+        )
+
+        response += f"\n**Result:**\n"
+        response += f"- Higher: **{comparison['higher']}**\n"
+        response += f"- Difference: {comparison['difference']:+.2f}\n"
+        response += f"- Percent difference: {comparison['percent_difference']:+.1f}%\n"
+
+        response += f"\n*Interpretation: {interpretation}*\n"
+        response += "\n*Data source: USDA Forest Service BIGMAP 2018 (30m resolution)*"
+
+        return response
+
+    except Exception as e:
+        logger.exception(f"Error comparing {state1} and {state2}")
+        return f"Error comparing locations: {e}"
+
+
+@tool(args_schema=SpeciesBiomassInput)
+async def query_species_specific_biomass(
+    state: str,
+    species_code: str,
+    county: str | None = None,
+) -> str:
+    """
+    Query biomass for a specific tree species from GridFIA 30m raster data.
+
+    Use for questions about:
+    - How much loblolly pine biomass is in North Carolina
+    - Total red maple volume in a county
+    - Species-specific forest resources
+    - Individual species distribution and density
+    - Biomass of a particular tree type
+
+    Note: Use query_gridfia_species_list first to find the species code.
+    Common codes: 0131 (Loblolly Pine), 0316 (Red Maple), 0802 (White Oak).
+    """
+    if not GRIDFIA_AVAILABLE:
+        return "GridFIA is not installed. Spatial analysis tools are unavailable."
+
+    # Validate species code format
+    if not species_code.isdigit() or len(species_code) != 4:
+        return (
+            f"Invalid species code: '{species_code}'. "
+            "Must be a 4-digit code (e.g., '0131' for Loblolly Pine). "
+            "Use query_gridfia_species_list to find valid codes."
+        )
+
+    try:
+        service = get_gridfia_service_extended()
+        result = await service.query_species_biomass(
+            state=state,
+            species_code=species_code,
+            county=county,
+        )
+
+        location = result["location"]
+        species_name = result["species_name"]
+
+        if not result.get("found"):
+            return result.get("message", f"Species {species_code} not found in {location}.")
+
+        if not result.get("has_data"):
+            return result.get("message", f"No biomass data for {species_name} in {location}.")
+
+        response = f"**{species_name} (SPCD {species_code}) Biomass - {location}**\n\n"
+        response += "*Source: BIGMAP 2018 modeled biomass at 30m resolution*\n\n"
+
+        # Main statistics
+        response += "**Biomass Statistics:**\n"
+        response += f"- Mean biomass: {result['mean_biomass_mgha']:.1f} Mg/ha\n"
+        response += f"- Std Dev: {result['std']:.1f} Mg/ha\n"
+        response += f"- Range: {result['min']:.1f} - {result['max']:.1f} Mg/ha\n"
+
+        # Total estimates
+        total_mg = result["total_biomass_mg"]
+        if total_mg >= 1_000_000:
+            response += f"- Total biomass: {total_mg / 1_000_000:.2f} million tonnes\n"
+        else:
+            response += f"- Total biomass: {total_mg:,.0f} tonnes\n"
+
+        # Carbon estimate
+        carbon_tonnes = total_mg * 0.5
+        if carbon_tonnes >= 1_000_000:
+            response += f"- Est. carbon storage: {carbon_tonnes / 1_000_000:.2f} million tonnes C\n"
+        else:
+            response += f"- Est. carbon storage: {carbon_tonnes:,.0f} tonnes C\n"
+
+        # Coverage
+        response += f"\n**Coverage:**\n"
+        response += f"- Species present in: {result['pixel_count']:,} pixels\n"
+        response += f"- Area with species: {result['area_hectares']:,.0f} hectares\n"
+        response += f"  ({result['area_hectares'] * 2.471:,.0f} acres)\n"
+
+        response += "\n*Note: Use query_gridfia_biomass for total forest biomass across all species.*"
+
+        return response
+
+    except Exception as e:
+        logger.exception(f"Error querying biomass for species {species_code}")
+        return f"Error querying species biomass: {e}"
+
+
 # =============================================================================
 # Export List for Agent Registration
 # =============================================================================
@@ -332,4 +635,7 @@ GRIDFIA_TOOLS = [
     query_gridfia_species_list,
     query_species_diversity,
     query_gridfia_biomass,
+    query_dominant_species,
+    compare_gridfia_locations,
+    query_species_specific_biomass,
 ]

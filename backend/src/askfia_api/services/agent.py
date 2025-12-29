@@ -1109,6 +1109,9 @@ You also have access to BIGMAP 2018 raster data at 30m resolution through GridFI
 - **Species diversity**: Shannon index, Simpson index, species richness per pixel
 - **Biomass mapping**: Spatially continuous aboveground biomass estimates
 - **Species information**: List of 300+ tree species with codes and names
+- **Dominant species**: Find which trees dominate a region by biomass
+- **Location comparison**: Compare diversity or biomass between two locations
+- **Species-specific biomass**: Query biomass for individual tree species
 
 ### When to Use GridFIA vs PyFIA
 
@@ -1126,6 +1129,10 @@ Both complement each other - PyFIA for rigorous statistics, GridFIA for spatial 
 - "Show me the Shannon diversity index for California"
 - "What species are available in BIGMAP data?"
 - "What is the total biomass in Durham County?"
+- "What are the dominant tree species in Georgia?"
+- "Compare species diversity between Wake County, NC and Fulton County, GA"
+- "How much loblolly pine biomass is in North Carolina?"
+- "Which county has higher biomass: Durham or Wake?"
 """
 
 # Build final system prompt based on available capabilities
