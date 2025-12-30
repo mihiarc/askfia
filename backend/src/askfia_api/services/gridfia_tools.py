@@ -252,24 +252,24 @@ async def query_gridfia_species_list(
 
 
 @tool(args_schema=SpeciesInLocationInput)
-async def query_species_in_location(
+async def list_species_in_state(
     state: str,
     filter_text: str | None = None,
 ) -> str:
     """
-    List tree species present in a specific state from GridFIA cloud data.
+    List all tree species that exist in a specific state.
 
-    THIS IS THE BEST TOOL for "what species are in [state]" questions.
-    Fast and lightweight - reads only metadata, no heavy computation.
+    USE THIS TOOL for any question asking "what species/trees are in [location]".
+    This is fast (metadata only) and returns the actual species present.
 
-    Use for questions about:
-    - "What tree species are in Rhode Island"
-    - "What trees grow in Connecticut"
-    - "List the species found in RI"
-    - "What oaks are in Rhode Island" (with filter_text="oak")
+    ALWAYS use this for:
+    - "What species are in Rhode Island?"
+    - "What trees are in Connecticut?"
+    - "List the trees in RI"
+    - "What oaks are in Rhode Island?" (use filter_text="oak")
+    - Any question about which trees/species exist in a state
 
-    Currently available states: Rhode Island (RI), Connecticut (CT)
-    For states not yet in cloud, use query_dominant_species instead.
+    Available states: Rhode Island (RI), Connecticut (CT)
     """
     if not GRIDFIA_AVAILABLE:
         return "GridFIA is not installed. Spatial analysis tools are unavailable."
@@ -335,18 +335,18 @@ async def query_species_diversity(
     metric: str = "shannon",
 ) -> str:
     """
-    Calculate species diversity indices from GridFIA 30m raster data.
+    Calculate diversity INDEX (Shannon/Simpson) - a statistical measure of biodiversity.
 
-    Use for questions about:
-    - How diverse are the forests in a state or county
-    - Shannon diversity index for a region
-    - Simpson diversity index for a region
-    - Species richness (how many species per pixel)
-    - Comparing biodiversity across areas
-    - Forest composition complexity
+    DO NOT use for "what species are in [state]" - use list_species_in_state instead.
 
-    Note: This provides spatially continuous data at 30m resolution,
-    complementing PyFIA's survey-based statistical estimates.
+    Use ONLY for:
+    - "What is the diversity INDEX in Rhode Island?" (calculates Shannon H')
+    - "How diverse are the forests?" (returns a number like 2.3)
+    - "What is the Shannon diversity?" (statistical biodiversity measure)
+    - "Calculate Simpson index for NC"
+
+    This returns NUMBERS (diversity indices), not a LIST of species names.
+    For listing actual species, use list_species_in_state.
     """
     if not GRIDFIA_AVAILABLE:
         return "GridFIA is not installed. Spatial analysis tools are unavailable."
@@ -745,9 +745,9 @@ async def query_species_specific_biomass(
 # =============================================================================
 
 GRIDFIA_TOOLS = [
-    query_gridfia_species_list,
-    query_species_in_location,  # Fast cloud-based species list for RI/CT
-    query_species_diversity,
+    list_species_in_state,  # FIRST: "what species are in RI" -> this tool
+    query_gridfia_species_list,  # "what is the code for oak" -> this tool
+    query_species_diversity,  # "what is the diversity index" -> this tool
     query_gridfia_biomass,
     query_dominant_species,
     compare_gridfia_locations,

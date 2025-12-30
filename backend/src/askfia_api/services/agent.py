@@ -1114,34 +1114,34 @@ You also have access to BIGMAP 2018 raster data at 30m resolution through GridFI
 - **Location comparison**: Compare diversity or biomass between two locations
 - **Species-specific biomass**: Query biomass for individual tree species
 
-### IMPORTANT: Tool Selection for Species Questions
+### CRITICAL: Tool Selection for Species Questions
 
-- **"What species are in Rhode Island?"** → Use `query_species_in_location` (fast, metadata only)
-- **"What trees grow in Connecticut?"** → Use `query_species_in_location`
-- **"What is the code for oak?"** → Use `query_gridfia_species_list` (global lookup)
-- **"What species diversity in NC?"** → Use `query_species_diversity` (Shannon/Simpson metrics)
-- **"What are the dominant trees?"** → Use `query_dominant_species` (ranked by biomass)
+**For "what species/trees are in [state]"** → ALWAYS use `list_species_in_state`
+This tool lists actual tree species names present in a state. It's fast and lightweight.
 
-Currently available for cloud streaming: Rhode Island (RI), Connecticut (CT)
+**For "what is the diversity/Shannon index"** → Use `query_species_diversity`
+This calculates a NUMERICAL diversity index, not a list of species.
+
+Tool mapping:
+- "What species are in Rhode Island?" → `list_species_in_state`
+- "What trees grow in Connecticut?" → `list_species_in_state`
+- "List the trees in RI" → `list_species_in_state`
+- "What is the Shannon diversity?" → `query_species_diversity` (returns a number)
+- "What is the code for oak?" → `query_gridfia_species_list`
+
+Available states for cloud queries: Rhode Island (RI), Connecticut (CT)
 
 ### When to Use GridFIA vs PyFIA
 
 - **PyFIA (survey-based)**: For statistical estimates with standard errors (SE%).
-  Best for official reporting and when uncertainty quantification is needed.
-
 - **GridFIA (model-based)**: For spatially continuous patterns at 30m resolution.
-  Best for mapping, visualization, and understanding spatial variation.
-
-Both complement each other - PyFIA for rigorous statistics, GridFIA for spatial patterns.
 
 ### GridFIA Example Queries
 
-- "What tree species are in Rhode Island?" → query_species_in_location
-- "What oaks are in Connecticut?" → query_species_in_location with filter
-- "What is the species diversity in Wake County, NC?" → query_species_diversity
-- "What is the code for loblolly pine?" → query_gridfia_species_list
-- "What are the dominant tree species in Georgia?" → query_dominant_species
-- "Compare species diversity between NC and SC" → compare_gridfia_locations
+- "What tree species are in Rhode Island?" → list_species_in_state
+- "What oaks are in Connecticut?" → list_species_in_state with filter
+- "What is the Shannon diversity index in NC?" → query_species_diversity
+- "What are the dominant trees in Georgia?" → query_dominant_species
 """
 
 # Build final system prompt based on available capabilities
