@@ -43,7 +43,10 @@
       "WebFetch(domain:fiatools.org)",
       "WebFetch(domain:pyfia.fiatools.org)",
       "Bash(ANTHROPIC_API_KEY=test-key uv run python -c \"\nfrom askfia_api.main import app\nfrom askfia_api.api.routes.auth import router, get_user_service\nprint\\(''Backend imports successful!''\\)\nprint\\(f''Auth router prefix: {router.prefix}''\\)\nprint\\(f''Routes: {[r.path for r in router.routes]}''\\)\n\")",
-      "mcp__render__get_service"
+      "mcp__render__get_service",
+      "WebSearch",
+      "WebFetch(domain:retz.dev)",
+      "Bash(ANTHROPIC_API_KEY=test-key uv run python:*)"
     ]
   }
 }

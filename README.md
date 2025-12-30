@@ -145,7 +145,7 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 
 ## The FIAtools Ecosystem
 
-askFIA is part of the [FIAtools Python ecosystem](https://fiatools.org) - a unified suite of open-source tools for forest inventory analysis:
+askFIA is part of the [FIAtools Python ecosystem](https://fiatools.org) - a unified suite of open-source tools for forest inventory applications:
 
 | Tool | Purpose | Key Features |
 |------|---------|--------------|
@@ -155,6 +155,10 @@ askFIA is part of the [FIAtools Python ecosystem](https://fiatools.org) - a unif
 | [**askFIA**](https://fiatools.org) | AI interface | Natural language queries for forest data |
 
 **[Explore the full ecosystem at fiatools.org](https://fiatools.org)**
+
+## Affiliation
+
+Developed in collaboration with USDA Forest Service Research & Development. askFIA provides an AI-powered interface to Forest Inventory and Analysis (FIA) data but is not part of the official FIA Program.
 
 ## Citation
 
@@ -170,6 +174,6 @@ askFIA is part of the [FIAtools Python ecosystem](https://fiatools.org) - a unif
 ---
 
 <div align="center">
-  <a href="https://fiatools.org"><strong>fiatools.org</strong></a> · Python Ecosystem for Forest Inventory Analysis<br>
+  <a href="https://fiatools.org"><strong>fiatools.org</strong></a> · Python Ecosystem for Forest Inventory Applications<br>
   <sub>Built by <a href="https://github.com/mihiarc">Chris Mihiar</a> · USDA Forest Service Southern Research Station</sub>
 </div>

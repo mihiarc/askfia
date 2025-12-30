@@ -1,7 +1,7 @@
 [project]
 name = "askfia-api"
 version = "0.2.1"
-description = "AskFIA - AI Conversational Interface for Forest Inventory Analysis - Part of the FIA Python Ecosystem"
+description = "AskFIA - AI Conversational Interface for Forest Inventory and Analysis (FIA) Data - Part of the FIA Python Ecosystem for Forest Inventory Applications"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
