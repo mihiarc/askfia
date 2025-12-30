@@ -43,6 +43,23 @@ class SpeciesListInput(BaseModel):
     )
 
 
+class SpeciesInLocationInput(BaseModel):
+    """Input for listing species in a specific location."""
+
+    state: str = Field(
+        description=(
+            "State name or two-letter abbreviation (e.g., 'RI', 'Rhode Island')"
+        ),
+    )
+    filter_text: str | None = Field(
+        default=None,
+        description=(
+            "Optional text to filter species by name. "
+            "For example, 'oak' will return all oak species."
+        ),
+    )
+
+
 class SpeciesDiversityInput(BaseModel):
     """Input for species diversity query."""
 
@@ -166,13 +183,22 @@ async def query_gridfia_species_list(
     limit: int = 20,
 ) -> str:
     """
-    List available tree species from BIGMAP 2018 raster data.
+    List ALL tree species codes available in the BIGMAP 2018 dataset.
+
+    IMPORTANT: This returns the master list of all ~300 species in BIGMAP,
+    NOT species present in a specific location. Use query_dominant_species
+    to find what species actually exist in a particular state or county.
 
     Use for questions about:
-    - What tree species are available in GridFIA/BIGMAP data
-    - Looking up species codes for specific trees
+    - What species codes are available in BIGMAP/GridFIA
+    - Looking up the 4-digit FIA code for a tree (e.g., "what is the code for oak")
     - Finding species by common or scientific name
-    - Understanding what species can be analyzed spatially
+    - Getting the species code before running species-specific queries
+
+    Do NOT use for:
+    - "What species are in Rhode Island" -> use query_dominant_species
+    - "What trees grow in California" -> use query_dominant_species
+    - Species diversity or richness -> use query_species_diversity
     """
     if not GRIDFIA_AVAILABLE:
         return "GridFIA is not installed. Spatial analysis tools are unavailable."
@@ -222,6 +248,83 @@ async def query_gridfia_species_list(
 
     except Exception as e:
         logger.exception("Error listing species")
+        return f"Error listing species: {e}"
+
+
+@tool(args_schema=SpeciesInLocationInput)
+async def query_species_in_location(
+    state: str,
+    filter_text: str | None = None,
+) -> str:
+    """
+    List tree species present in a specific state from GridFIA cloud data.
+
+    THIS IS THE BEST TOOL for "what species are in [state]" questions.
+    Fast and lightweight - reads only metadata, no heavy computation.
+
+    Use for questions about:
+    - "What tree species are in Rhode Island"
+    - "What trees grow in Connecticut"
+    - "List the species found in RI"
+    - "What oaks are in Rhode Island" (with filter_text="oak")
+
+    Currently available states: Rhode Island (RI), Connecticut (CT)
+    For states not yet in cloud, use query_dominant_species instead.
+    """
+    if not GRIDFIA_AVAILABLE:
+        return "GridFIA is not installed. Spatial analysis tools are unavailable."
+
+    try:
+        service = get_gridfia_service()
+        cloud_service = service._cloud_service
+
+        # Check if state is available in cloud
+        if not cloud_service.is_state_available(state):
+            return (
+                f"State '{state}' is not yet available in cloud storage. "
+                f"Available states: Rhode Island (RI), Connecticut (CT). "
+                f"For other states, use query_dominant_species which downloads data."
+            )
+
+        # Get species list from cloud metadata
+        species_list = cloud_service.get_species_in_state(state)
+        if species_list is None:
+            return f"Error loading species data for {state}."
+
+        # Apply filter if provided
+        if filter_text:
+            filter_lower = filter_text.lower()
+            species_list = [
+                s for s in species_list
+                if filter_lower in s["common_name"].lower()
+            ]
+
+        # Format response
+        state_name = cloud_service._normalize_state(state)
+        state_full = {"RI": "Rhode Island", "CT": "Connecticut"}.get(state_name, state)
+
+        response = f"**Tree Species in {state_full}**\n\n"
+
+        if filter_text:
+            response += f"Filter: '{filter_text}'\n"
+
+        response += f"Total species present: {len(species_list)}\n\n"
+
+        if len(species_list) == 0:
+            response += "No matching species found.\n"
+        else:
+            response += "| Code | Common Name |\n"
+            response += "|------|-------------|\n"
+
+            for species in species_list:
+                response += f"| {species['species_code']} | {species['common_name']} |\n"
+
+        response += "\n*Data source: USDA Forest Service BIGMAP 2018 (30m resolution)*"
+
+        return response
+
+    except Exception as e:
+        logger.exception(f"Error listing species for {state}")
         return f"Error listing species: {e}"
 
 
@@ -404,14 +507,24 @@ async def query_dominant_species(
     top_n: int = 5,
 ) -> str:
     """
-    Find the dominant tree species in a location by total biomass.
+    Find what tree species exist in a specific state or county.
+
+    THIS IS THE PRIMARY TOOL for location-specific species questions.
+    Returns species ranked by total biomass, showing which trees
+    actually grow in that location.
 
     Use for questions about:
-    - What are the most common trees in an area
-    - Which species dominate a forest region
+    - "What species are in Rhode Island" (set top_n=20 or higher)
+    - "What trees grow in California"
+    - What are the most common/dominant trees in an area
+    - Which species are present in a forest region
     - What is the primary tree cover in a county or state
     - Ranking species by abundance/biomass
-    - Understanding forest composition
+    - Understanding forest composition of a specific location
+
+    Do NOT use for:
+    - Looking up species codes -> use query_gridfia_species_list
+    - Diversity metrics (Shannon/Simpson) -> use query_species_diversity
     """
     if not GRIDFIA_AVAILABLE:
         return "GridFIA is not installed. Spatial analysis tools are unavailable."
@@ -633,6 +746,7 @@ async def query_species_specific_biomass(
 
 GRIDFIA_TOOLS = [
     query_gridfia_species_list,
+    query_species_in_location,  # Fast cloud-based species list for RI/CT
     query_species_diversity,
     query_gridfia_biomass,
     query_dominant_species,

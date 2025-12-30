@@ -110,6 +110,35 @@ class CloudDataService:
         abbr = self._normalize_state(state)
         return abbr is not None and abbr in self._available_states
 
+    def get_species_in_state(self, state: str) -> list[dict[str, str]] | None:
+        """Get list of species present in a state from cloud metadata.
+
+        This is a lightweight operation that only reads store metadata,
+        not the full biomass array. Returns None if state not in cloud.
+        """
+        store = self._get_cloud_store(state)
+        if store is None:
+            return None
+
+        try:
+            # Get species codes and names from store metadata
+            species_codes = store.species_codes
+            species_names = store.species_names
+
+            # Filter out placeholder/empty entries
+            species_list = []
+            for code, name in zip(species_codes, species_names):
+                if code and code != "0000" and name:
+                    species_list.append({
+                        "species_code": code,
+                        "common_name": name,
+                    })
+
+            return species_list
+        except Exception as e:
+            logger.error(f"Error getting species list from cloud: {e}")
+            return None
+
     def _get_cloud_store(self, state: str) -> Any | None:
         """Get ZarrStore for a state from cloud, with caching."""
         abbr = self._normalize_state(state)
