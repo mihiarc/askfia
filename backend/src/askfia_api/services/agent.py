@@ -1106,12 +1106,23 @@ _GRIDFIA_PROMPT_ADDITION = """
 
 You also have access to BIGMAP 2018 raster data at 30m resolution through GridFIA:
 
+- **Species in location**: List what tree species exist in a state (RI, CT available)
 - **Species diversity**: Shannon index, Simpson index, species richness per pixel
 - **Biomass mapping**: Spatially continuous aboveground biomass estimates
-- **Species information**: List of 300+ tree species with codes and names
-- **Dominant species**: Find which trees dominate a region by biomass
+- **Species codes lookup**: Master list of 300+ BIGMAP species codes
+- **Dominant species**: Ranked list of trees by biomass in a region
 - **Location comparison**: Compare diversity or biomass between two locations
 - **Species-specific biomass**: Query biomass for individual tree species
+
+### IMPORTANT: Tool Selection for Species Questions
+
+- **"What species are in Rhode Island?"** → Use `query_species_in_location` (fast, metadata only)
+- **"What trees grow in Connecticut?"** → Use `query_species_in_location`
+- **"What is the code for oak?"** → Use `query_gridfia_species_list` (global lookup)
+- **"What species diversity in NC?"** → Use `query_species_diversity` (Shannon/Simpson metrics)
+- **"What are the dominant trees?"** → Use `query_dominant_species` (ranked by biomass)
+
+Currently available for cloud streaming: Rhode Island (RI), Connecticut (CT)
 
 ### When to Use GridFIA vs PyFIA
 
@@ -1125,14 +1136,12 @@ Both complement each other - PyFIA for rigorous statistics, GridFIA for spatial 
 
 ### GridFIA Example Queries
 
-- "What is the species diversity in Wake County, NC?"
-- "Show me the Shannon diversity index for California"
-- "What species are available in BIGMAP data?"
-- "What is the total biomass in Durham County?"
-- "What are the dominant tree species in Georgia?"
-- "Compare species diversity between Wake County, NC and Fulton County, GA"
-- "How much loblolly pine biomass is in North Carolina?"
-- "Which county has higher biomass: Durham or Wake?"
+- "What tree species are in Rhode Island?" → query_species_in_location
+- "What oaks are in Connecticut?" → query_species_in_location with filter
+- "What is the species diversity in Wake County, NC?" → query_species_diversity
+- "What is the code for loblolly pine?" → query_gridfia_species_list
+- "What are the dominant tree species in Georgia?" → query_dominant_species
+- "Compare species diversity between NC and SC" → compare_gridfia_locations
 """
 
 # Build final system prompt based on available capabilities
