@@ -163,55 +163,166 @@ class CloudDataService:
     def _calculate_diversity_sync(
         self, store: Any, state: str, metric: str
     ) -> dict[str, Any]:
-        """Synchronous diversity calculation from ZarrStore."""
+        """Synchronous diversity calculation from ZarrStore using chunked processing.
+
+        This implementation processes data in spatial tiles to avoid loading the
+        entire array into memory. For Rhode Island (326 species x 3407 x 2264),
+        the full array would be ~10 GB. By processing in 512x512 tiles, we keep
+        memory usage under 1 GB.
+
+        Uses parallel Welford's algorithm for numerically stable, vectorized
+        computation of mean and variance across tiles.
+        """
         abbr = self._normalize_state(state)
         location_name = self._api._STATE_METADATA.get(abbr, {}).get("name", state)
 
-        # Get biomass data and calculate diversity
-        biomass = store.biomass[:]  # Shape: (species, rows, cols)
+        # Get array shape without loading data
+        num_species, height, width = store.shape
 
-        # Calculate presence (biomass > 0)
-        presence = (biomass > 0).astype(np.float32)
+        # Tile size for chunked processing
+        # 512x512 tiles with all species = 326 * 512 * 512 * 4 bytes = ~340 MB per tile
+        tile_size = 512
 
-        # Calculate metric
-        if metric == "richness":
-            # Count of species per pixel
-            diversity = np.sum(presence, axis=0)
-        elif metric == "shannon":
-            # Shannon diversity index
-            total = np.sum(biomass, axis=0)
-            total = np.where(total > 0, total, 1)  # Avoid division by zero
-            proportions = biomass / total
-            # Only compute where proportion > 0
-            log_p = np.where(proportions > 0, np.log(proportions), 0)
-            diversity = -np.sum(proportions * log_p, axis=0)
-        elif metric == "simpson":
-            # Simpson diversity index (1 - D)
-            total = np.sum(biomass, axis=0)
-            total = np.where(total > 0, total, 1)
-            proportions = biomass / total
-            diversity = 1 - np.sum(proportions ** 2, axis=0)
-        else:
-            raise ValueError(f"Unknown metric: {metric}")
+        # Running statistics using parallel Welford's algorithm
+        # See: https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Parallel_algorithm
+        # For diversity metric
+        div_count = 0
+        div_mean = 0.0
+        div_m2 = 0.0  # Sum of squared differences from mean
+        div_min = float('inf')
+        div_max = float('-inf')
 
-        # Mask out non-forest pixels (where all species are 0)
-        forest_mask = np.sum(presence, axis=0) > 0
-        valid_diversity = diversity[forest_mask]
+        # For richness (always computed)
+        rich_count = 0
+        rich_mean = 0.0
+        rich_m2 = 0.0
+        rich_max = 0
 
-        # Calculate richness stats for all metrics
-        richness = np.sum(presence, axis=0)
-        valid_richness = richness[forest_mask]
+        # Process in tiles
+        for row_start in range(0, height, tile_size):
+            row_end = min(row_start + tile_size, height)
+
+            for col_start in range(0, width, tile_size):
+                col_end = min(col_start + tile_size, width)
+
+                # Load only this tile (all species, but limited spatial extent)
+                # Shape: (num_species, tile_height, tile_width)
+                tile_biomass = store.biomass[:, row_start:row_end, col_start:col_end]
+
+                # Calculate presence for this tile
+                tile_presence = (tile_biomass > 0).astype(np.float32)
+
+                # Calculate richness for this tile
+                tile_richness = np.sum(tile_presence, axis=0)
+
+                # Forest mask for this tile
+                tile_forest_mask = tile_richness > 0
+
+                if not np.any(tile_forest_mask):
+                    # No forest pixels in this tile, skip
+                    continue
+
+                # Calculate diversity metric for this tile
+                if metric == "richness":
+                    tile_diversity = tile_richness
+                elif metric == "shannon":
+                    # Shannon diversity index: H' = -sum(p_i * ln(p_i))
+                    tile_total = np.sum(tile_biomass, axis=0)
+                    tile_total = np.where(tile_total > 0, tile_total, 1)
+                    tile_proportions = tile_biomass / tile_total
+                    tile_log_p = np.where(tile_proportions > 0, np.log(tile_proportions), 0)
+                    tile_diversity = -np.sum(tile_proportions * tile_log_p, axis=0)
+                elif metric == "simpson":
+                    # Simpson diversity index: 1 - D = 1 - sum(p_i^2)
+                    tile_total = np.sum(tile_biomass, axis=0)
+                    tile_total = np.where(tile_total > 0, tile_total, 1)
+                    tile_proportions = tile_biomass / tile_total
+                    tile_diversity = 1 - np.sum(tile_proportions ** 2, axis=0)
+                else:
+                    raise ValueError(f"Unknown metric: {metric}")
+
+                # Get valid values for this tile (flattened arrays)
+                valid_div = tile_diversity[tile_forest_mask].ravel()
+                valid_rich = tile_richness[tile_forest_mask].ravel()
+
+                # Update diversity statistics using parallel Welford's algorithm
+                # This merges the tile statistics with running statistics
+                tile_n = len(valid_div)
+                if tile_n > 0:
+                    tile_mean = float(np.mean(valid_div))
+                    tile_m2 = float(np.sum((valid_div - tile_mean) ** 2))
+                    tile_min = float(np.min(valid_div))
+                    tile_max = float(np.max(valid_div))
+
+                    # Parallel merge of statistics
+                    if div_count == 0:
+                        div_count = tile_n
+                        div_mean = tile_mean
+                        div_m2 = tile_m2
+                        div_min = tile_min
+                        div_max = tile_max
+                    else:
+                        # Parallel Welford's formula
+                        combined_count = div_count + tile_n
+                        delta = tile_mean - div_mean
+                        div_mean = (div_count * div_mean + tile_n * tile_mean) / combined_count
+                        div_m2 = div_m2 + tile_m2 + delta ** 2 * div_count * tile_n / combined_count
+                        div_count = combined_count
+                        div_min = min(div_min, tile_min)
+                        div_max = max(div_max, tile_max)
+
+                # Update richness statistics using parallel Welford's algorithm
+                rich_tile_n = len(valid_rich)
+                if rich_tile_n > 0:
+                    rich_tile_mean = float(np.mean(valid_rich))
+                    rich_tile_m2 = float(np.sum((valid_rich - rich_tile_mean) ** 2))
+                    rich_tile_max = int(np.max(valid_rich))
+
+                    if rich_count == 0:
+                        rich_count = rich_tile_n
+                        rich_mean = rich_tile_mean
+                        rich_m2 = rich_tile_m2
+                        rich_max = rich_tile_max
+                    else:
+                        combined_count = rich_count + rich_tile_n
+                        delta = rich_tile_mean - rich_mean
+                        rich_mean = (rich_count * rich_mean + rich_tile_n * rich_tile_mean) / combined_count
+                        rich_m2 = rich_m2 + rich_tile_m2 + delta ** 2 * rich_count * rich_tile_n / combined_count
+                        rich_count = combined_count
+                        rich_max = max(rich_max, rich_tile_max)
+
+                # Free memory explicitly
+                del tile_biomass, tile_presence, tile_richness, tile_diversity
+                del tile_forest_mask, valid_div, valid_rich
+
+        # Calculate final standard deviation
+        div_std = np.sqrt(div_m2 / div_count) if div_count > 1 else 0.0
+
+        # Handle edge case where no forest pixels were found
+        if div_count == 0:
+            return {
+                "location": location_name,
+                "metric": metric,
+                "mean": 0.0,
+                "std": 0.0,
+                "min": 0.0,
+                "max": 0.0,
+                "pixel_count": 0,
+                "richness_mean": 0.0,
+                "richness_max": 0,
+                "source": "cloud",
+            }
 
         return {
             "location": location_name,
             "metric": metric,
-            "mean": float(np.mean(valid_diversity)) if len(valid_diversity) > 0 else 0.0,
-            "std": float(np.std(valid_diversity)) if len(valid_diversity) > 0 else 0.0,
-            "min": float(np.min(valid_diversity)) if len(valid_diversity) > 0 else 0.0,
-            "max": float(np.max(valid_diversity)) if len(valid_diversity) > 0 else 0.0,
-            "pixel_count": int(np.sum(forest_mask)),
-            "richness_mean": float(np.mean(valid_richness)) if len(valid_richness) > 0 else 0.0,
-            "richness_max": int(np.max(valid_richness)) if len(valid_richness) > 0 else 0,
+            "mean": float(div_mean),
+            "std": float(div_std),
+            "min": float(div_min),
+            "max": float(div_max),
+            "pixel_count": div_count,
+            "richness_mean": float(rich_mean),
+            "richness_max": rich_max,
             "source": "cloud",
         }
 
@@ -245,30 +356,116 @@ class CloudDataService:
             return None
 
     def _calculate_biomass_sync(self, store: Any, state: str) -> dict[str, Any]:
-        """Synchronous biomass calculation from ZarrStore."""
+        """Synchronous biomass calculation from ZarrStore using chunked processing.
+
+        This implementation processes data in spatial tiles to avoid loading the
+        entire array into memory. Uses parallel Welford's algorithm for numerically
+        stable, vectorized computation of mean and variance across tiles.
+        """
         abbr = self._normalize_state(state)
         location_name = self._api._STATE_METADATA.get(abbr, {}).get("name", state)
 
-        # Get total biomass (sum across species)
-        biomass = store.biomass[:]  # Shape: (species, rows, cols)
-        total_biomass = np.sum(biomass, axis=0)
+        # Get array shape without loading data
+        num_species, height, width = store.shape
 
-        # Mask non-forest pixels
-        forest_mask = total_biomass > 0
-        valid_biomass = total_biomass[forest_mask]
+        # Tile size for chunked processing
+        # 512x512 tiles with all species = 326 * 512 * 512 * 4 bytes = ~340 MB per tile
+        tile_size = 512
+
+        # Running statistics using parallel Welford's algorithm
+        count = 0
+        mean = 0.0
+        m2 = 0.0  # Sum of squared differences from mean
+        total_sum = 0.0  # Running sum for total biomass
+        min_val = float('inf')
+        max_val = float('-inf')
 
         # Calculate pixel area (30m resolution = 0.09 ha)
         pixel_area_ha = 0.09
-        area_hectares = int(np.sum(forest_mask)) * pixel_area_ha
+
+        # Process in tiles
+        for row_start in range(0, height, tile_size):
+            row_end = min(row_start + tile_size, height)
+
+            for col_start in range(0, width, tile_size):
+                col_end = min(col_start + tile_size, width)
+
+                # Load only this tile (all species, limited spatial extent)
+                # Shape: (num_species, tile_height, tile_width)
+                tile_biomass = store.biomass[:, row_start:row_end, col_start:col_end]
+
+                # Calculate total biomass for this tile (sum across species)
+                tile_total = np.sum(tile_biomass, axis=0)
+
+                # Forest mask for this tile
+                tile_forest_mask = tile_total > 0
+
+                if not np.any(tile_forest_mask):
+                    # No forest pixels in this tile, skip
+                    del tile_biomass, tile_total, tile_forest_mask
+                    continue
+
+                # Get valid biomass values (flattened)
+                valid_biomass = tile_total[tile_forest_mask].ravel()
+
+                # Update running statistics using parallel Welford's algorithm
+                tile_n = len(valid_biomass)
+                if tile_n > 0:
+                    tile_mean = float(np.mean(valid_biomass))
+                    tile_m2 = float(np.sum((valid_biomass - tile_mean) ** 2))
+                    tile_sum = float(np.sum(valid_biomass))
+                    tile_min = float(np.min(valid_biomass))
+                    tile_max = float(np.max(valid_biomass))
+
+                    # Parallel merge of statistics
+                    if count == 0:
+                        count = tile_n
+                        mean = tile_mean
+                        m2 = tile_m2
+                        total_sum = tile_sum
+                        min_val = tile_min
+                        max_val = tile_max
+                    else:
+                        # Parallel Welford's formula
+                        combined_count = count + tile_n
+                        delta = tile_mean - mean
+                        mean = (count * mean + tile_n * tile_mean) / combined_count
+                        m2 = m2 + tile_m2 + delta ** 2 * count * tile_n / combined_count
+                        total_sum += tile_sum
+                        count = combined_count
+                        min_val = min(min_val, tile_min)
+                        max_val = max(max_val, tile_max)
+
+                # Free memory explicitly
+                del tile_biomass, tile_total, tile_forest_mask, valid_biomass
+
+        # Calculate final standard deviation
+        std = np.sqrt(m2 / count) if count > 1 else 0.0
+
+        # Handle edge case where no forest pixels were found
+        if count == 0:
+            return {
+                "location": location_name,
+                "mean_biomass_mgha": 0.0,
+                "std": 0.0,
+                "min": 0.0,
+                "max": 0.0,
+                "total_biomass_mg": 0.0,
+                "pixel_count": 0,
+                "area_hectares": 0.0,
+                "source": "cloud",
+            }
+
+        area_hectares = count * pixel_area_ha
 
         return {
             "location": location_name,
-            "mean_biomass_mgha": float(np.mean(valid_biomass)) if len(valid_biomass) > 0 else 0.0,
-            "std": float(np.std(valid_biomass)) if len(valid_biomass) > 0 else 0.0,
-            "min": float(np.min(valid_biomass)) if len(valid_biomass) > 0 else 0.0,
-            "max": float(np.max(valid_biomass)) if len(valid_biomass) > 0 else 0.0,
-            "total_biomass_mg": float(np.sum(valid_biomass) * pixel_area_ha),
-            "pixel_count": int(np.sum(forest_mask)),
+            "mean_biomass_mgha": float(mean),
+            "std": float(std),
+            "min": float(min_val),
+            "max": float(max_val),
+            "total_biomass_mg": float(total_sum * pixel_area_ha),
+            "pixel_count": count,
             "area_hectares": area_hectares,
             "source": "cloud",
         }
