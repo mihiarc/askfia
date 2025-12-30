@@ -81,6 +81,8 @@ class CloudDataService:
         self._api = gridfia_api
         self._available_states: set[str] = set()
         self._store_cache: dict[str, Any] = {}  # Cache loaded stores
+        self._species_catalog: dict[str, str] = {}  # Cache: code -> name
+        self._species_presence_cache: dict[str, list[int]] = {}  # Cache: state -> indices with data
 
         # Determine available states from GridFIA config
         if self._api is not None:
@@ -110,25 +112,115 @@ class CloudDataService:
         abbr = self._normalize_state(state)
         return abbr is not None and abbr in self._available_states
 
-    def get_species_in_state(self, state: str) -> list[dict[str, str]] | None:
-        """Get list of species present in a state from cloud metadata.
+    def _get_species_catalog(self) -> dict[str, str]:
+        """Get species code -> name mapping from FIA REST API.
 
-        This is a lightweight operation that only reads store metadata,
-        not the full biomass array. Returns None if state not in cloud.
+        Lazily loads and caches the catalog on first call.
+        """
+        if not self._species_catalog and self._api is not None:
+            try:
+                species_list = self._api.list_species()
+                self._species_catalog = {
+                    s.species_code: s.common_name for s in species_list
+                }
+                logger.info(f"Loaded species catalog with {len(self._species_catalog)} species")
+            except Exception as e:
+                logger.warning(f"Failed to load species catalog: {e}")
+        return self._species_catalog
+
+    def _get_present_species_indices(self, state: str) -> list[int]:
+        """Get indices of species that have actual biomass data in a state.
+
+        Uses efficient sampling - checks sum of each layer to detect presence.
+        Results are cached per state.
+        """
+        abbr = self._normalize_state(state)
+        if abbr is None:
+            return []
+
+        # Return cached result if available
+        if abbr in self._species_presence_cache:
+            return self._species_presence_cache[abbr]
+
+        store = self._get_cloud_store(state)
+        if store is None:
+            return []
+
+        num_species = store.shape[0]
+        present_indices = []
+
+        logger.info(f"Scanning {num_species} species layers for {abbr}...")
+
+        # Check each species layer for non-zero data
+        # This downloads each layer but is cached per state
+        for i in range(num_species):
+            if i == 0:  # Skip total biomass layer
+                continue
+            try:
+                # Just get the sum - Zarr streaming makes this reasonably fast
+                layer = store.biomass[i, :, :]
+                total = float(np.sum(layer))
+                if total > 0:
+                    present_indices.append(i)
+            except Exception as e:
+                logger.warning(f"Error checking species at index {i}: {e}")
+                continue
+
+        logger.info(f"Found {len(present_indices)} species with data in {abbr}")
+        self._species_presence_cache[abbr] = present_indices
+        return present_indices
+
+    def get_species_in_state(self, state: str, check_presence: bool = True) -> list[dict[str, str]] | None:
+        """Get list of species present in a state from cloud data.
+
+        By default, checks which species have actual biomass data in the state
+        (not just metadata entries). This requires scanning all species layers
+        but results are cached.
+
+        Species names are looked up from the FIA REST API catalog since
+        the B2 Zarr stores may have empty species_names arrays.
+
+        Args:
+            state: State name or abbreviation.
+            check_presence: If True, only returns species that have actual
+                biomass data in the state (recommended, cached after first call).
+                If False, returns all species in the metadata (faster initially
+                but may include species not actually present).
         """
         store = self._get_cloud_store(state)
         if store is None:
             return None
 
         try:
-            # Get species codes and names from store metadata
+            # Get species codes from store metadata
             species_codes = store.species_codes
             species_names = store.species_names
 
-            # Filter out placeholder/empty entries
+            # Get the FIA species catalog for name lookup
+            catalog = self._get_species_catalog()
+
+            # Get indices of present species (cached)
+            if check_presence:
+                present_indices = set(self._get_present_species_indices(state))
+            else:
+                present_indices = None
+
+            # Build species list
             species_list = []
-            for code, name in zip(species_codes, species_names):
-                if code and code != "0000" and name:
+            for i, code in enumerate(species_codes):
+                if not code or code == "0000":
+                    continue
+
+                # Check if species has actual biomass data
+                if present_indices is not None and i not in present_indices:
+                    continue
+
+                # Try to get name from store first, fall back to catalog
+                name = species_names[i] if i < len(species_names) else ""
+                if not name:
+                    name = catalog.get(code, "")
+
+                if name:
                     species_list.append({
                         "species_code": code,
                         "common_name": name,
