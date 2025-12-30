@@ -18,6 +18,6 @@ bcrypt>=5.0.0
 # pyFIA pinned to commit ae0a365 with plot_domain support
 
 # GridFIA for spatial raster analysis (B2 cloud streaming)
-gridfia @ git+https://github.com/mihiarc/gridfia.git@main
+gridfia>=0.5.0
 fsspec>=2023.1.0
 aiohttp>=3.8.0
