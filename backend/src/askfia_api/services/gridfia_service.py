@@ -180,8 +180,11 @@ class CloudDataService:
         num_species, height, width = store.shape
 
         # Tile size for chunked processing
-        # 512x512 tiles with all species = 326 * 512 * 512 * 4 bytes = ~340 MB per tile
-        tile_size = 512
+        # Must account for multiple intermediate arrays during calculation:
+        # - tile_biomass, tile_presence, tile_proportions, tile_log_p
+        # With 326 species at 64x64: 326 * 64 * 64 * 4 = ~5 MB per array
+        # Peak with 4 arrays: ~20 MB, well under memory limits
+        tile_size = 64
 
         # Running statistics using parallel Welford's algorithm
         # See: https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Parallel_algorithm
@@ -369,8 +372,11 @@ class CloudDataService:
         num_species, height, width = store.shape
 
         # Tile size for chunked processing
-        # 512x512 tiles with all species = 326 * 512 * 512 * 4 bytes = ~340 MB per tile
-        tile_size = 512
+        # Must account for multiple intermediate arrays during calculation:
+        # - tile_biomass, tile_presence, tile_proportions, tile_log_p
+        # With 326 species at 64x64: 326 * 64 * 64 * 4 = ~5 MB per array
+        # Peak with 4 arrays: ~20 MB, well under memory limits
+        tile_size = 64
 
         # Running statistics using parallel Welford's algorithm
         count = 0
