@@ -8,3 +8,22 @@
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
+
+# Security headers for all pages
+[[headers]]
+  for = "/*"
+  [headers.values]
+    # Prevent clickjacking attacks
+    X-Frame-Options = "DENY"
+    # Prevent MIME type sniffing
+    X-Content-Type-Options = "nosniff"
+    # Control referrer information
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    # Enable XSS protection (legacy browsers)
+    X-XSS-Protection = "1; mode=block"
+    # Permissions policy (disable unused features)
+    Permissions-Policy = "camera=(), microphone=(), geolocation=(), interest-cohort=()"
+    # Content Security Policy
+    # Note: Next.js requires 'unsafe-eval' and 'unsafe-inline' for development
+    # In production, consider using nonces for stricter CSP
+    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://pyfia-api.onrender.com; frame-ancestors 'none';"

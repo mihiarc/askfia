@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
 from .api.routes import auth, chat, query, downloads, health, usage
+from .services.rate_limiter import RateLimitMiddleware
 
 # Configure logging
 logging.basicConfig(
@@ -53,6 +54,13 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization", "Cookie", "X-Requested-With"],
+)
+
+# Rate limiting middleware
+# Security: Prevent abuse and DoS attacks
+app.add_middleware(
+    RateLimitMiddleware,
+    requests_per_minute=settings.rate_limit_requests,
 )
 
 # Include routers

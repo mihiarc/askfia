@@ -1,8 +1,19 @@
 """Health check endpoints."""
 
-from fastapi import APIRouter
+import os
+from fastapi import APIRouter, HTTPException
 
 router = APIRouter()
+
+
+def _is_debug_enabled() -> bool:
+    """
+    Check if debug endpoints are enabled.
+
+    Debug endpoints are disabled by default in production.
+    Set DEBUG_ENDPOINTS=true to enable them.
+    """
+    return os.environ.get("DEBUG_ENDPOINTS", "").lower() in ("true", "1", "yes")
 
 
 @router.get("/health")
@@ -46,12 +57,19 @@ async def readiness_check():
 async def debug_query(step: int = 10):
     """Debug: test a MotherDuck query directly with step-by-step execution.
 
+    SECURITY: Disabled by default. Set DEBUG_ENDPOINTS=true to enable.
+
     Use step parameter to limit execution:
     - step=1-4: Basic MotherDuck connectivity tests
     - step=5-6: Import tests
     - step=7: Create MotherDuckFIA (may OOM)
     - step=8-10: Run actual query (may OOM)
     """
+    if not _is_debug_enabled():
+        raise HTTPException(
+            status_code=404,
+            detail="Debug endpoints are disabled in production"
+        )
     import gc
     import resource
     import sys
@@ -180,7 +198,16 @@ async def debug_query(step: int = 10):
 
 @router.get("/debug/storage")
 async def debug_storage():
-    """Debug storage configuration."""
+    """Debug storage configuration.
+
+    SECURITY: Disabled by default. Set DEBUG_ENDPOINTS=true to enable.
+    """
+    if not _is_debug_enabled():
+        raise HTTPException(
+            status_code=404,
+            detail="Debug endpoints are disabled in production"
+        )
+
     from ...config import settings
     from ...services.storage import storage
 
