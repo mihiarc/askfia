@@ -9,6 +9,55 @@ from typing import Literal
 # Security Validation
 # ============================================================================
 
+# Valid US state codes (50 states + DC + territories)
+VALID_STATE_CODES = {
+    # 50 States
+    "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
+    "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD",
+    "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ",
+    "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC",
+    "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY",
+    # District of Columbia
+    "DC",
+    # US Territories (FIA has some data)
+    "PR", "VI", "GU", "AS", "MP",
+}
+
+
+def validate_state_codes(states: list[str]) -> list[str]:
+    """
+    Validate and normalize state codes.
+
+    Args:
+        states: List of state codes to validate
+
+    Returns:
+        List of validated, uppercase state codes
+
+    Raises:
+        ValueError: If any state code is invalid
+    """
+    if not states:
+        raise ValueError("At least one state code is required")
+
+    normalized = []
+    invalid = []
+
+    for state in states:
+        code = state.strip().upper()
+        if code in VALID_STATE_CODES:
+            normalized.append(code)
+        else:
+            invalid.append(state)
+
+    if invalid:
+        raise ValueError(
+            f"Invalid state code(s): {', '.join(invalid)}. "
+            f"Must be valid 2-letter US state abbreviations (e.g., NC, GA, CA)."
+        )
+
+    return normalized
+
 
 def validate_domain_expression(domain: str | None, domain_type: str = "tree_domain") -> str | None:
     """
@@ -107,6 +156,11 @@ class AreaQuery(BaseModel):
         description="Column to group by (e.g., OWNGRPCD, FORTYPCD)",
     )
 
+    @field_validator("states")
+    @classmethod
+    def validate_states(cls, v: list[str]) -> list[str]:
+        return validate_state_codes(v)
+
 
 class VolumeQuery(BaseModel):
     """Request for timber volume query."""
@@ -117,6 +171,11 @@ class VolumeQuery(BaseModel):
         default=None,
         description="Filter expression (e.g., 'DIA >= 10.0')",
     )
+
+    @field_validator("states")
+    @classmethod
+    def validate_states(cls, v: list[str]) -> list[str]:
+        return validate_state_codes(v)
 
     @field_validator("tree_domain")
     @classmethod
@@ -134,6 +193,11 @@ class BiomassQuery(BaseModel):
     )
     by_species: bool = Field(default=False, description="Group by species")
 
+    @field_validator("states")
+    @classmethod
+    def validate_states(cls, v: list[str]) -> list[str]:
+        return validate_state_codes(v)
+
 
 class TPAQuery(BaseModel):
     """Request for trees per acre query."""
@@ -143,6 +207,11 @@ class TPAQuery(BaseModel):
         default="STATUSCD == 1", description="Tree filter (1=live, 2=dead)"
     )
     by_species: bool = Field(default=False, description="Group by species")
+
+    @field_validator("states")
+    @classmethod
+    def validate_states(cls, v: list[str]) -> list[str]:
+        return validate_state_codes(v)
 
     @field_validator("tree_domain")
     @classmethod
@@ -164,6 +233,11 @@ class CompareQuery(BaseModel):
     land_type: Literal["forest", "timber"] = Field(
         default="forest", description="Land type filter"
     )
+
+    @field_validator("states")
+    @classmethod
+    def validate_states(cls, v: list[str]) -> list[str]:
+        return validate_state_codes(v)
 
 
 # ============================================================================
@@ -238,6 +312,11 @@ class DownloadRequest(BaseModel):
     format: Literal["duckdb", "parquet", "csv"] = Field(
         default="parquet", description="Output format"
     )
+
+    @field_validator("states")
+    @classmethod
+    def validate_states(cls, v: list[str]) -> list[str]:
+        return validate_state_codes(v)
 
 
 class DownloadResponse(BaseModel):

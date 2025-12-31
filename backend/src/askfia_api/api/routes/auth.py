@@ -14,6 +14,24 @@ from askfia_api.services.user_service import UserService
 
 logger = logging.getLogger(__name__)
 
+
+def _mask_email(email: str) -> str:
+    """
+    Mask email address for safe logging.
+
+    Preserves first 2 characters and domain for debugging while hiding PII.
+    Example: "user@example.com" -> "us***@example.com"
+    """
+    if not email or "@" not in email:
+        return "***"
+    local, domain = email.split("@", 1)
+    if len(local) <= 2:
+        masked_local = local[0] + "***"
+    else:
+        masked_local = local[:2] + "***"
+    return f"{masked_local}@{domain}"
+
+
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 # --- User Service Singleton ---
@@ -176,12 +194,19 @@ def set_auth_cookies(
     )
 
     # Access token cookie - available to all paths
+    # Security note: SameSite=None is required for cross-origin API calls
+    # (frontend on Netlify at ask.fiatools.org, backend on Render at pyfia-api.onrender.com)
+    # This is mitigated by:
+    # 1. secure=True - cookies only sent over HTTPS
+    # 2. httponly=True - prevents JavaScript access (XSS protection)
+    # 3. Strict CORS origin validation in main.py
+    # 4. Short-lived access tokens with refresh token rotation
     response.set_cookie(
         key="access_token",
         value=access_token,
         httponly=True,
-        secure=True,
-        samesite="none",
+        secure=True,  # Required: only send over HTTPS
+        samesite="none",  # Required for cross-origin requests
         path="/",
         max_age=settings.auth_access_token_expire,
     )
@@ -191,9 +216,9 @@ def set_auth_cookies(
         key="refresh_token",
         value=refresh_token,
         httponly=True,
-        secure=True,
-        samesite="none",
-        path="/api/v1/auth",
+        secure=True,  # Required: only send over HTTPS
+        samesite="none",  # Required for cross-origin requests
+        path="/api/v1/auth",  # Restricted path for refresh operations
         max_age=settings.auth_refresh_token_expire,
     )
 
@@ -266,7 +291,7 @@ async def signup(request: EmailSignupRequest, response: Response) -> AuthRespons
         set_auth_cookies(response, email=user.email, user_id=user.id)
 
         if is_new:
-            logger.info(f"New user registered: {email}")
+            logger.info(f"New user registered: {_mask_email(email)}")
             return AuthResponse(
                 authenticated=True,
                 message="Welcome! Your account has been created.",
@@ -274,7 +299,7 @@ async def signup(request: EmailSignupRequest, response: Response) -> AuthRespons
                 is_new_user=True,
             )
         else:
-            logger.info(f"Existing user logged in: {email}")
+            logger.info(f"Existing user logged in: {_mask_email(email)}")
             return AuthResponse(
                 authenticated=True,
                 message="Welcome back!",

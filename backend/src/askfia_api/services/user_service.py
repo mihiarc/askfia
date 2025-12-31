@@ -11,6 +11,23 @@ from pydantic import BaseModel
 logger = logging.getLogger(__name__)
 
 
+def _mask_email(email: str) -> str:
+    """
+    Mask email address for safe logging.
+
+    Preserves first 2 characters and domain for debugging while hiding PII.
+    Example: "user@example.com" -> "us***@example.com"
+    """
+    if not email or "@" not in email:
+        return "***"
+    local, domain = email.split("@", 1)
+    if len(local) <= 2:
+        masked_local = local[0] + "***"
+    else:
+        masked_local = local[:2] + "***"
+    return f"{masked_local}@{domain}"
+
+
 class User(BaseModel):
     """User data model."""
 
@@ -83,10 +100,44 @@ class UserService:
 
             logger.info(f"User database initialized at {self.db_path}")
 
+    def _validate_database_name(self, db_name: str) -> str:
+        """
+        Validate database name to prevent SQL injection.
+
+        Database names must contain only alphanumeric characters and underscores,
+        and must start with a letter or underscore.
+
+        Args:
+            db_name: The database name to validate
+
+        Returns:
+            The validated database name
+
+        Raises:
+            ValueError: If the database name contains invalid characters
+        """
+        import re
+
+        if not db_name:
+            raise ValueError("Database name cannot be empty")
+
+        # Only allow alphanumeric and underscore, must start with letter or underscore
+        if not re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", db_name):
+            raise ValueError(
+                f"Invalid database name: '{db_name}'. "
+                "Must contain only letters, numbers, and underscores, "
+                "and must start with a letter or underscore."
+            )
+
+        return db_name
+
     def _ensure_motherduck_database(self) -> None:
         """Ensure the MotherDuck database exists, creating it if necessary."""
         # Extract database name from path (e.g., "md:askfia" -> "askfia")
         db_name = self.db_path.replace("md:", "")
+
+        # Security: Validate database name to prevent SQL injection
+        db_name = self._validate_database_name(db_name)
 
         token = os.environ.get("MOTHERDUCK_TOKEN") or os.environ.get("motherduck_token")
         if not token:
@@ -101,6 +152,7 @@ class UserService:
 
             if db_name not in existing_dbs:
                 logger.info(f"Creating MotherDuck database: {db_name}")
+                # Safe: db_name has been validated above
                 conn.execute(f"CREATE DATABASE IF NOT EXISTS {db_name}")
                 logger.info(f"Created MotherDuck database: {db_name}")
             else:
@@ -158,7 +210,7 @@ class UserService:
                     "UPDATE users SET last_access = ? WHERE email = ?",
                     [now, email],
                 )
-                logger.info(f"Existing user logged in: {email}")
+                logger.info(f"Existing user logged in: {_mask_email(email)}")
                 created_at = row[2] if isinstance(row[2], datetime) else datetime.fromisoformat(str(row[2]))
                 return User(
                     id=row[0],
@@ -173,7 +225,7 @@ class UserService:
                 "INSERT INTO users (id, email, created_at, last_access) VALUES (?, ?, ?, ?)",
                 [user_id, email, now, now],
             )
-            logger.info(f"New user registered: {email}")
+            logger.info(f"New user registered: {_mask_email(email)}")
 
             return User(id=user_id, email=email, created_at=now, last_access=now), True
 
