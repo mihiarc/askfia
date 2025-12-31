@@ -138,13 +138,17 @@ class TestAgentIntegration:
         from askfia_api.services.agent import TOOLS, GRIDFIA_TOOLS
 
         # Should have GridFIA tools registered
-        assert len(GRIDFIA_TOOLS) == 3
+        assert len(GRIDFIA_TOOLS) == 7
 
         # TOOLS should include both PyFIA and GridFIA
         tool_names = [t.name for t in TOOLS]
+        assert "list_species_in_state" in tool_names
         assert "query_gridfia_species_list" in tool_names
         assert "query_species_diversity" in tool_names
         assert "query_gridfia_biomass" in tool_names
+        assert "query_dominant_species" in tool_names
+        assert "compare_gridfia_locations" in tool_names
+        assert "query_species_specific_biomass" in tool_names
 
     def test_system_prompt_includes_gridfia(self):
         """Test that system prompt includes GridFIA capabilities."""
@@ -708,10 +712,10 @@ class TestToolCount:
     """Test that all tools are properly registered."""
 
     def test_tool_count(self):
-        """Test that we have 6 GridFIA tools registered."""
+        """Test that we have 7 GridFIA tools registered."""
         from askfia_api.services.gridfia_tools import GRIDFIA_TOOLS
 
-        assert len(GRIDFIA_TOOLS) == 6
+        assert len(GRIDFIA_TOOLS) == 7
 
     def test_all_tools_present(self):
         """Test that all expected tools are present."""
@@ -720,6 +724,7 @@ class TestToolCount:
         tool_names = [t.name for t in GRIDFIA_TOOLS]
 
         expected_tools = [
+            "list_species_in_state",
             "query_gridfia_species_list",
             "query_species_diversity",
             "query_gridfia_biomass",
