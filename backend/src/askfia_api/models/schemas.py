@@ -1,7 +1,73 @@
 """Pydantic schemas for API requests and responses."""
 
-from pydantic import BaseModel, Field
+import re
+from pydantic import BaseModel, Field, field_validator
 from typing import Literal
+
+
+# ============================================================================
+# Security Validation
+# ============================================================================
+
+
+def validate_domain_expression(domain: str | None, domain_type: str = "tree_domain") -> str | None:
+    """
+    Validate domain expression to prevent SQL injection.
+
+    This validates filter expressions like 'DIA >= 10.0' to ensure they don't
+    contain SQL injection attempts.
+
+    Args:
+        domain: The domain expression to validate
+        domain_type: Description for error messages
+
+    Returns:
+        The validated domain string, or None
+
+    Raises:
+        ValueError: If the domain contains dangerous SQL patterns
+    """
+    if domain is None:
+        return None
+
+    if not isinstance(domain, str):
+        raise TypeError(f"{domain_type} must be a string, got {type(domain).__name__}")
+
+    # Basic sanity checks
+    if domain.strip() == "":
+        raise ValueError(f"{domain_type} cannot be an empty string")
+
+    # Check for dangerous SQL patterns with word boundaries
+    # Using word boundaries to avoid false positives (e.g., "UPDATED_DATE" is OK)
+    dangerous_patterns = [
+        r"\bDROP\b",
+        r"\bDELETE\b",
+        r"\bINSERT\b",
+        r"\bUPDATE\b",
+        r"\bALTER\b",
+        r"\bCREATE\b",
+        r"\bEXEC\b",
+        r"\bEXECUTE\b",
+        r"\bTRUNCATE\b",
+        r"\bUNION\b",
+        r"\bSELECT\b",
+        r"--",  # SQL comment
+        r"/\*",  # SQL block comment start
+        r"\*/",  # SQL block comment end
+        r";",    # Statement terminator
+    ]
+
+    domain_upper = domain.upper()
+    for pattern in dangerous_patterns:
+        if re.search(pattern, domain_upper if pattern.startswith(r"\b") else domain):
+            # Extract the keyword for the error message
+            keyword = pattern.replace(r"\b", "").replace("\\", "")
+            raise ValueError(
+                f"{domain_type} contains potentially dangerous SQL pattern: '{keyword}'. "
+                f"Only simple filter expressions like 'DIA >= 10.0' are allowed."
+            )
+
+    return domain
 
 
 # ============================================================================
@@ -52,6 +118,12 @@ class VolumeQuery(BaseModel):
         description="Filter expression (e.g., 'DIA >= 10.0')",
     )
 
+    @field_validator("tree_domain")
+    @classmethod
+    def validate_tree_domain(cls, v: str | None) -> str | None:
+        """Validate tree_domain to prevent SQL injection."""
+        return validate_domain_expression(v, "tree_domain")
+
 
 class BiomassQuery(BaseModel):
     """Request for biomass/carbon query."""
@@ -71,6 +143,13 @@ class TPAQuery(BaseModel):
         default="STATUSCD == 1", description="Tree filter (1=live, 2=dead)"
     )
     by_species: bool = Field(default=False, description="Group by species")
+
+    @field_validator("tree_domain")
+    @classmethod
+    def validate_tree_domain(cls, v: str) -> str:
+        """Validate tree_domain to prevent SQL injection."""
+        result = validate_domain_expression(v, "tree_domain")
+        return result if result is not None else "STATUSCD == 1"
 
 
 class CompareQuery(BaseModel):

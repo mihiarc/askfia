@@ -1,19 +1,72 @@
 """LangChain agent for FIA queries."""
 
 import logging
+import re
 import time
 from collections.abc import AsyncGenerator
 
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.tools import tool
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from ..config import settings
 from .fia_service import fia_service
 from .forest_types import get_forest_type_name
 from .gridfia_service import GRIDFIA_AVAILABLE
 from .usage_tracker import usage_tracker
+
+
+# ============================================================================
+# Security Validation
+# ============================================================================
+
+
+def validate_domain_expression(domain: str | None, domain_type: str = "tree_domain") -> str | None:
+    """
+    Validate domain expression to prevent SQL injection.
+
+    This validates filter expressions like 'DIA >= 10.0' to ensure they don't
+    contain SQL injection attempts.
+    """
+    if domain is None:
+        return None
+
+    if not isinstance(domain, str):
+        raise TypeError(f"{domain_type} must be a string")
+
+    if domain.strip() == "":
+        raise ValueError(f"{domain_type} cannot be empty")
+
+    # Check for dangerous SQL patterns
+    dangerous_patterns = [
+        r"\bDROP\b",
+        r"\bDELETE\b",
+        r"\bINSERT\b",
+        r"\bUPDATE\b",
+        r"\bALTER\b",
+        r"\bCREATE\b",
+        r"\bEXEC\b",
+        r"\bEXECUTE\b",
+        r"\bTRUNCATE\b",
+        r"\bUNION\b",
+        r"\bSELECT\b",
+        r"--",
+        r"/\*",
+        r"\*/",
+        r";",
+    ]
+
+    domain_upper = domain.upper()
+    for pattern in dangerous_patterns:
+        if re.search(pattern, domain_upper if pattern.startswith(r"\b") else domain):
+            keyword = pattern.replace(r"\b", "").replace("\\", "")
+            raise ValueError(
+                f"{domain_type} contains dangerous SQL pattern: '{keyword}'. "
+                f"Only simple filters like 'DIA >= 10.0' are allowed."
+            )
+
+    return domain
 
 logger = logging.getLogger(__name__)
 
@@ -122,6 +175,11 @@ class TimberVolumeInput(BaseModel):
         default=None, description="Filter (e.g., 'DIA >= 10.0')"
     )
 
+    @field_validator("tree_domain")
+    @classmethod
+    def validate_tree_domain(cls, v: str | None) -> str | None:
+        return validate_domain_expression(v, "tree_domain")
+
 
 @tool(args_schema=TimberVolumeInput)
 async def query_timber_volume(
@@ -204,6 +262,11 @@ class MortalityInput(BaseModel):
         default=None, description="Filter (e.g., 'DIA >= 10.0')"
     )
 
+    @field_validator("tree_domain")
+    @classmethod
+    def validate_tree_domain(cls, v: str | None) -> str | None:
+        return validate_domain_expression(v, "tree_domain")
+
 
 @tool(args_schema=MortalityInput)
 async def query_mortality(
@@ -247,6 +310,11 @@ class RemovalsInput(BaseModel):
         default=None, description="Filter (e.g., 'DIA >= 10.0')"
     )
 
+    @field_validator("tree_domain")
+    @classmethod
+    def validate_tree_domain(cls, v: str | None) -> str | None:
+        return validate_domain_expression(v, "tree_domain")
+
 
 @tool(args_schema=RemovalsInput)
 async def query_removals(
@@ -289,6 +357,11 @@ class GrowthInput(BaseModel):
     )
     measure: str = Field(default="volume", description="volume, biomass, or count")
     land_type: str = Field(default="forest", description="forest or timber")
+
+    @field_validator("tree_domain")
+    @classmethod
+    def validate_tree_domain(cls, v: str | None) -> str | None:
+        return validate_domain_expression(v, "tree_domain")
 
 
 @tool(args_schema=GrowthInput)
@@ -450,6 +523,11 @@ class TPAInput(BaseModel):
         default="live", description="live, dead, gs (growing stock), or all"
     )
 
+    @field_validator("tree_domain")
+    @classmethod
+    def validate_tree_domain(cls, v: str | None) -> str | None:
+        return validate_domain_expression(v, "tree_domain")
+
 
 class ForestTypeInput(BaseModel):
     """Input for forest type analysis."""
@@ -462,6 +540,11 @@ class ForestTypeInput(BaseModel):
     tree_domain: str | None = Field(
         default=None, description="Optional tree filter (e.g., 'DIA >= 10.0')"
     )
+
+    @field_validator("tree_domain")
+    @classmethod
+    def validate_tree_domain(cls, v: str | None) -> str | None:
+        return validate_domain_expression(v, "tree_domain")
 
 
 class CompareInput(BaseModel):
@@ -630,6 +713,11 @@ class StandSizeInput(BaseModel):
         default=None, description="Tree filter (e.g., 'DIA >= 10.0')"
     )
 
+    @field_validator("tree_domain")
+    @classmethod
+    def validate_tree_domain(cls, v: str | None) -> str | None:
+        return validate_domain_expression(v, "tree_domain")
+
 
 @tool(args_schema=StandSizeInput)
 async def query_by_stand_size(
@@ -716,6 +804,11 @@ class OwnershipInput(BaseModel):
     tree_domain: str | None = Field(
         default=None, description="Tree filter (e.g., 'DIA >= 10.0')"
     )
+
+    @field_validator("tree_domain")
+    @classmethod
+    def validate_tree_domain(cls, v: str | None) -> str | None:
+        return validate_domain_expression(v, "tree_domain")
 
 
 @tool(args_schema=OwnershipInput)
@@ -867,6 +960,11 @@ class CountyQueryInput(BaseModel):
     tree_domain: str | None = Field(
         default=None, description="Tree filter (e.g., 'DIA >= 10.0') for volume and tpa"
     )
+
+    @field_validator("tree_domain")
+    @classmethod
+    def validate_tree_domain(cls, v: str | None) -> str | None:
+        return validate_domain_expression(v, "tree_domain")
 
 
 @tool(args_schema=CountyQueryInput)
