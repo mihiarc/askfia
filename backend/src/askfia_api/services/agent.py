@@ -16,7 +16,6 @@ from .forest_types import get_forest_type_name
 from .gridfia_service import GRIDFIA_AVAILABLE
 from .usage_tracker import usage_tracker
 
-
 # ============================================================================
 # Security Validation
 # ============================================================================
@@ -105,20 +104,22 @@ class ForestAreaInput(BaseModel):
 
     states: list[str] = Field(description="Two-letter state codes (e.g., ['NC', 'GA'])")
     land_type: str = Field(default="forest", description="forest, timber, or reserved")
-    grp_by: str | None = Field(
+    grp_by: list[str] | str | None = Field(
         default=None,
         description=(
-            "Column to group results by. Common options: "
+            "Column(s) to group results by. Can be a single column or a list for crosstabulation. "
+            "Common options: "
             "FORTYPCD (forest type - loblolly pine, oak-hickory, etc.), "
             "OWNGRPCD (ownership - public, private), "
-            "STDSZCD (stand size class - large/medium/small diameter)"
+            "STDSZCD (stand size class - large/medium/small diameter). "
+            "Example for crosstab: ['OWNGRPCD', 'FORTYPCD'] gives area by ownership AND forest type."
         ),
     )
 
 
 @tool(args_schema=ForestAreaInput)
 async def query_forest_area(
-    states: list[str], land_type: str = "forest", grp_by: str | None = None
+    states: list[str], land_type: str = "forest", grp_by: list[str] | str | None = None
 ) -> str:
     """
     Query forest land area from FIA database.
@@ -129,6 +130,7 @@ async def query_forest_area(
     - Forest area by forest type (use grp_by='FORTYPCD')
     - Forest area by stand size (use grp_by='STDSZCD')
     - Timberland vs reserved forest area
+    - Crosstabulated results (use grp_by=['OWNGRPCD', 'FORTYPCD'] for area by ownership AND forest type)
     """
     result = await fia_service.query_area(states, land_type, grp_by)
 
@@ -138,7 +140,10 @@ async def query_forest_area(
     response += f"SE: {result['se_percent']:.1f}%\n"
 
     if result.get("breakdown") and grp_by:
-        response += f"\nBreakdown by {grp_by}:\n"
+        # Normalize grp_by to list for consistent handling
+        grp_by_list = [grp_by] if isinstance(grp_by, str) else grp_by
+
+        response += f"\nBreakdown by {' × '.join(grp_by_list)}:\n"
 
         # Sort by estimate descending
         sorted_rows = sorted(
@@ -147,20 +152,24 @@ async def query_forest_area(
             reverse=True,
         )
 
-        for row in sorted_rows[:15]:
-            code = row.get(grp_by)
+        for row in sorted_rows[:20]:  # Show more rows for crosstabs
             estimate = row.get("AREA", row.get("ESTIMATE", 0))
 
-            # Look up human-readable names
-            if grp_by == "FORTYPCD":
-                label = get_forest_type_name(code) if code else "Unknown"
-            elif grp_by == "OWNGRPCD" and code in OWNERSHIP_GROUPS:
-                label = OWNERSHIP_GROUPS[code]
-            elif grp_by == "STDSZCD" and code in STAND_SIZE_CLASSES:
-                label = STAND_SIZE_CLASSES[code]
-            else:
-                label = f"Code {code}"
+            # Build label from all grouping columns
+            label_parts = []
+            for col in grp_by_list:
+                code = row.get(col)
+                if col == "FORTYPCD":
+                    part = get_forest_type_name(code) if code else "Unknown"
+                elif col == "OWNGRPCD" and code in OWNERSHIP_GROUPS:
+                    part = OWNERSHIP_GROUPS[code]
+                elif col == "STDSZCD" and code in STAND_SIZE_CLASSES:
+                    part = STAND_SIZE_CLASSES[code]
+                else:
+                    part = f"{col}={code}"
+                label_parts.append(part)
 
+            label = " | ".join(label_parts)
             response += f"- {label}: {estimate:,.0f} acres\n"
 
     return response
@@ -437,9 +446,12 @@ class AreaChangeInput(BaseModel):
         default="net",
         description="net (gains minus losses), gross_gain (forest gained), or gross_loss (forest lost)",
     )
-    grp_by: str | None = Field(
+    grp_by: list[str] | str | None = Field(
         default=None,
-        description="Column to group results by (e.g., OWNGRPCD for ownership)",
+        description=(
+            "Column(s) to group results by. Can be a single column or list for crosstabulation. "
+            "Example: OWNGRPCD for ownership, or ['OWNGRPCD', 'FORTYPCD'] for ownership by forest type."
+        ),
     )
 
 
@@ -448,7 +460,7 @@ async def query_area_change(
     states: list[str],
     land_type: str = "forest",
     change_type: str = "net",
-    grp_by: str | None = None,
+    grp_by: list[str] | str | None = None,
 ) -> str:
     """
     Query annual forest area change from FIA database.
@@ -459,6 +471,7 @@ async def query_area_change(
     - Forest area gained from non-forest land
     - Forest area lost to non-forest land (e.g., development, conversion)
     - Area change by ownership type
+    - Crosstabulated area change (e.g., grp_by=['OWNGRPCD', 'FORTYPCD'])
 
     Results show annualized change in acres per year based on remeasured plots.
     Positive values indicate net gain, negative values indicate net loss.
@@ -479,7 +492,10 @@ async def query_area_change(
     response += f"SE: {result['se_percent']:.1f}%\n"
 
     if result.get("breakdown") and grp_by:
-        response += f"\nBreakdown by {grp_by}:\n"
+        # Normalize grp_by to list for consistent handling
+        grp_by_list = [grp_by] if isinstance(grp_by, str) else grp_by
+
+        response += f"\nBreakdown by {' × '.join(grp_by_list)}:\n"
 
         # Sort by absolute change value descending
         sorted_rows = sorted(
@@ -488,15 +504,24 @@ async def query_area_change(
             reverse=True,
         )
 
-        for row in sorted_rows[:15]:
-            code = row.get(grp_by)
+        for row in sorted_rows[:20]:  # Show more rows for crosstabs
             change = row.get("AREA_CHANGE_TOTAL", 0)
 
-            # Look up human-readable names for ownership groups
-            if grp_by == "OWNGRPCD" and code in OWNERSHIP_GROUPS:
-                label = OWNERSHIP_GROUPS[code]
-            else:
-                label = f"Code {code}"
+            # Build label from all grouping columns
+            label_parts = []
+            for col in grp_by_list:
+                code = row.get(col)
+                if col == "FORTYPCD":
+                    part = get_forest_type_name(code) if code else "Unknown"
+                elif col == "OWNGRPCD" and code in OWNERSHIP_GROUPS:
+                    part = OWNERSHIP_GROUPS[code]
+                elif col == "STDSZCD" and code in STAND_SIZE_CLASSES:
+                    part = STAND_SIZE_CLASSES[code]
+                else:
+                    part = f"{col}={code}"
+                label_parts.append(part)
+
+            label = " | ".join(label_parts)
 
             # Format with sign
             if change >= 0:
@@ -1187,6 +1212,15 @@ You can query validated forest inventory data including:
 
 5. **Be helpful**: Suggest related queries that might interest the user.
 
+## Crosstabulation Support
+
+You can break down results by multiple dimensions simultaneously using the grp_by parameter
+with a list of columns. For example:
+- grp_by=['OWNGRPCD', 'FORTYPCD'] gives forest area by ownership AND forest type
+- grp_by=['STDSZCD', 'OWNGRPCD'] gives area by stand size class AND ownership
+
+This is useful for questions like "Break down forest area by ownership and forest type."
+
 ## Example Queries You Can Answer
 
 - "How much forest is in North Carolina?"
@@ -1195,6 +1229,7 @@ You can query validated forest inventory data including:
 - "What are the carbon stocks in Mecklenburg County, North Carolina?"
 - "Which state has more biomass: Oregon or Washington?"
 - "How many trees per acre are in Fulton County, Georgia?"
+- "Break down forest area in Georgia by ownership and forest type" (crosstab)
 """
 
 # GridFIA capabilities addition

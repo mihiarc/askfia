@@ -254,7 +254,7 @@ class FIAService:
         self,
         states: list[str],
         land_type: str = "forest",
-        grp_by: str | None = None,
+        grp_by: list[str] | str | None = None,
     ) -> dict:
         """Query forest area across states."""
         results = []
@@ -837,7 +837,7 @@ class FIAService:
         states: list[str],
         land_type: str = "forest",
         change_type: str = "net",
-        grp_by: str | None = None,
+        grp_by: list[str] | str | None = None,
     ) -> dict:
         """Query forest area change across states."""
         results = []
