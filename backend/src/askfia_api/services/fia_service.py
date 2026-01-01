@@ -255,8 +255,17 @@ class FIAService:
         states: list[str],
         land_type: str = "forest",
         grp_by: list[str] | str | None = None,
+        cond_domain: str | None = None,
     ) -> dict:
-        """Query forest area across states."""
+        """Query forest area across states.
+
+        Args:
+            states: List of state codes
+            land_type: Type of land (forest, timber, reserved)
+            grp_by: Column(s) to group by
+            cond_domain: Filter expression for condition-level attributes
+                         (e.g., 'FORTYPCD == 141' for loblolly pine)
+        """
         results = []
 
         for state in states:
@@ -265,7 +274,10 @@ class FIAService:
             with self._get_fia_connection(state) as db:
                 # Use db.area() method which uses server-side aggregation for MotherDuck
                 # This avoids loading full tables into memory
-                result_df = db.area(land_type=land_type, grp_by=grp_by)
+                kwargs = {"land_type": land_type, "grp_by": grp_by}
+                if cond_domain:
+                    kwargs["cond_domain"] = cond_domain
+                result_df = db.area(**kwargs)
                 df = (
                     result_df.to_pandas()
                     if hasattr(result_df, "to_pandas")

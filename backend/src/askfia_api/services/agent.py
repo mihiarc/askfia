@@ -115,11 +115,29 @@ class ForestAreaInput(BaseModel):
             "Example for crosstab: ['OWNGRPCD', 'FORTYPCD'] gives area by ownership AND forest type."
         ),
     )
+    cond_domain: str | None = Field(
+        default=None,
+        description=(
+            "Filter expression for condition-level attributes. Use to filter by forest type, "
+            "ownership, or other stand-level attributes BEFORE grouping. "
+            "Examples: 'FORTYPCD == 141' (loblolly pine only), 'OWNGRPCD == 40' (private only), "
+            "'STDSZCD == 1' (large diameter stands only). "
+            "Combine with grp_by to get filtered breakdowns like 'loblolly pine area by ownership'."
+        ),
+    )
+
+    @field_validator("cond_domain")
+    @classmethod
+    def validate_cond_domain(cls, v: str | None) -> str | None:
+        return validate_domain_expression(v, "cond_domain")
 
 
 @tool(args_schema=ForestAreaInput)
 async def query_forest_area(
-    states: list[str], land_type: str = "forest", grp_by: list[str] | str | None = None
+    states: list[str],
+    land_type: str = "forest",
+    grp_by: list[str] | str | None = None,
+    cond_domain: str | None = None,
 ) -> str:
     """
     Query forest land area from FIA database.
@@ -131,11 +149,14 @@ async def query_forest_area(
     - Forest area by stand size (use grp_by='STDSZCD')
     - Timberland vs reserved forest area
     - Crosstabulated results (use grp_by=['OWNGRPCD', 'FORTYPCD'] for area by ownership AND forest type)
+    - Filtered breakdowns (use cond_domain='FORTYPCD == 141' with grp_by='OWNGRPCD' for loblolly pine by ownership)
     """
-    result = await fia_service.query_area(states, land_type, grp_by)
+    result = await fia_service.query_area(states, land_type, grp_by, cond_domain)
 
     response = f"**Forest Area ({land_type})**\n"
     response += f"States: {', '.join(states)}\n"
+    if cond_domain:
+        response += f"Filter: {cond_domain}\n"
     response += f"Total: {result['total_area_acres']:,.0f} acres\n"
     response += f"SE: {result['se_percent']:.1f}%\n"
 
@@ -1221,6 +1242,31 @@ with a list of columns. For example:
 
 This is useful for questions like "Break down forest area by ownership and forest type."
 
+## Filtering Support (cond_domain)
+
+Use cond_domain to filter by condition-level attributes BEFORE grouping. This enables
+queries like "loblolly pine area by ownership" by filtering first, then grouping.
+
+Common forest type codes (FORTYPCD) for cond_domain:
+- 141 = Loblolly pine
+- 142 = Longleaf pine
+- 161 = Slash pine
+- 121 = Shortleaf pine
+- 221 = White oak / red oak / hickory
+- 503 = Oak-hickory (general)
+- 701 = Black ash / American elm / red maple
+- 801 = Sugar maple / beech / yellow birch
+- 901 = Aspen
+- 902 = Paper birch
+
+Ownership codes (OWNGRPCD):
+- 10 = National Forest
+- 20 = Other federal
+- 30 = State & local government
+- 40 = Private
+
+Example: cond_domain='FORTYPCD == 141', grp_by='OWNGRPCD' → loblolly pine area by ownership
+
 ## Example Queries You Can Answer
 
 - "How much forest is in North Carolina?"
@@ -1230,6 +1276,7 @@ This is useful for questions like "Break down forest area by ownership and fores
 - "Which state has more biomass: Oregon or Washington?"
 - "How many trees per acre are in Fulton County, Georgia?"
 - "Break down forest area in Georgia by ownership and forest type" (crosstab)
+- "Break down loblolly pine area by ownership in Georgia" (filter + group)
 """
 
 # GridFIA capabilities addition
