@@ -1182,6 +1182,128 @@ async def lookup_species(
     return response
 
 
+class ForestTypeLookupInput(BaseModel):
+    """Input for forest type lookup."""
+
+    fortypcd: int | None = Field(
+        default=None, description="Forest type code to lookup (e.g., 161 for loblolly pine)"
+    )
+    name: str | None = Field(
+        default=None, description="Forest type name to search for (e.g., 'pine', 'oak', 'loblolly')"
+    )
+    list_all: bool = Field(
+        default=False, description="List all available forest types"
+    )
+
+
+@tool(args_schema=ForestTypeLookupInput)
+async def lookup_forest_type(
+    fortypcd: int | None = None,
+    name: str | None = None,
+    list_all: bool = False,
+) -> str:
+    """
+    Lookup forest type codes and names from FIA reference data.
+
+    Use for questions about:
+    - What forest type code 161 is (converts FORTYPCD to name)
+    - Finding the code for 'loblolly pine' or 'oak' (searches by name)
+    - What forest types are available (list_all=True)
+    - Understanding forest type codes in query results
+
+    IMPORTANT: Use this tool to find the correct FORTYPCD before using cond_domain
+    to filter forest area queries by forest type.
+    """
+    from .forest_types import FOREST_TYPE_NAMES
+
+    if fortypcd is not None:
+        # Lookup by code
+        name_result = FOREST_TYPE_NAMES.get(fortypcd)
+        if name_result:
+            response = f"**Forest Type Code {fortypcd}**\n"
+            response += f"Name: {name_result}\n"
+            response += "\nTo query area for this forest type, use:\n"
+            response += f"  cond_domain='FORTYPCD == {fortypcd}'"
+        else:
+            response = f"Forest type code {fortypcd} not found in reference data."
+        return response
+
+    if name:
+        # Search by name (case-insensitive partial match)
+        search_term = name.lower()
+        matches = [
+            (code, ft_name)
+            for code, ft_name in FOREST_TYPE_NAMES.items()
+            if search_term in ft_name.lower()
+        ]
+
+        if matches:
+            # Sort by code
+            matches.sort(key=lambda x: x[0])
+            response = f"**Forest Types matching '{name}'** ({len(matches)} found)\n\n"
+            for code, ft_name in matches[:20]:  # Limit to 20 results
+                response += f"- **FORTYPCD {code}**: {ft_name}\n"
+            if len(matches) > 20:
+                response += f"\n... and {len(matches) - 20} more matches"
+            response += "\n\nTo filter by a specific type, use cond_domain='FORTYPCD == <code>'"
+        else:
+            response = f"No forest types found matching '{name}'.\n"
+            response += "Try a broader search term like 'pine', 'oak', 'maple', or 'spruce'."
+        return response
+
+    if list_all:
+        # Group by type category
+        response = "**FIA Forest Type Codes (FORTYPCD)**\n\n"
+
+        # Group by hundred ranges
+        groups = {
+            "Softwoods - Northern Pines (100-159)": [],
+            "Softwoods - Southern Pines (160-169)": [],
+            "Softwoods - Western (180-389)": [],
+            "Hardwoods - Oak/Pine (400-409)": [],
+            "Hardwoods - Oak/Hickory (500-599)": [],
+            "Hardwoods - Oak/Gum/Cypress (600-699)": [],
+            "Hardwoods - Elm/Ash/Cottonwood (700-759)": [],
+            "Hardwoods - Maple/Beech/Birch (800-809)": [],
+            "Hardwoods - Aspen/Birch & Western (900-999)": [],
+        }
+
+        for code, ft_name in sorted(FOREST_TYPE_NAMES.items()):
+            if 100 <= code < 160:
+                groups["Softwoods - Northern Pines (100-159)"].append((code, ft_name))
+            elif 160 <= code < 180:
+                groups["Softwoods - Southern Pines (160-169)"].append((code, ft_name))
+            elif 180 <= code < 400:
+                groups["Softwoods - Western (180-389)"].append((code, ft_name))
+            elif 400 <= code < 500:
+                groups["Hardwoods - Oak/Pine (400-409)"].append((code, ft_name))
+            elif 500 <= code < 600:
+                groups["Hardwoods - Oak/Hickory (500-599)"].append((code, ft_name))
+            elif 600 <= code < 700:
+                groups["Hardwoods - Oak/Gum/Cypress (600-699)"].append((code, ft_name))
+            elif 700 <= code < 800:
+                groups["Hardwoods - Elm/Ash/Cottonwood (700-759)"].append((code, ft_name))
+            elif 800 <= code < 900:
+                groups["Hardwoods - Maple/Beech/Birch (800-809)"].append((code, ft_name))
+            else:
+                groups["Hardwoods - Aspen/Birch & Western (900-999)"].append((code, ft_name))
+
+        for group_name, types in groups.items():
+            if types:
+                response += f"**{group_name}**\n"
+                for code, ft_name in types[:10]:  # Show first 10 per group
+                    response += f"  {code}: {ft_name}\n"
+                if len(types) > 10:
+                    response += f"  ... and {len(types) - 10} more\n"
+                response += "\n"
+
+        response += f"Total: {len(FOREST_TYPE_NAMES)} forest types\n"
+        response += "\nUse name='<search term>' to search for specific types."
+        return response
+
+    return "Please provide fortypcd (code), name (search term), or list_all=True."
+
+
 # All available tools - PyFIA core tools
 PYFIA_TOOLS = [
     query_forest_area,
@@ -1198,6 +1320,7 @@ PYFIA_TOOLS = [
     query_by_ownership,
     query_by_county,
     lookup_species,
+    lookup_forest_type,
 ]
 
 # Combine PyFIA and GridFIA tools (GridFIA tools only included if available)
@@ -1247,17 +1370,8 @@ This is useful for questions like "Break down forest area by ownership and fores
 Use cond_domain to filter by condition-level attributes BEFORE grouping. This enables
 queries like "loblolly pine area by ownership" by filtering first, then grouping.
 
-Common forest type codes (FORTYPCD) for cond_domain:
-- 141 = Loblolly pine
-- 142 = Longleaf pine
-- 161 = Slash pine
-- 121 = Shortleaf pine
-- 221 = White oak / red oak / hickory
-- 503 = Oak-hickory (general)
-- 701 = Black ash / American elm / red maple
-- 801 = Sugar maple / beech / yellow birch
-- 901 = Aspen
-- 902 = Paper birch
+**IMPORTANT**: Use lookup_forest_type to find the correct FORTYPCD code before filtering.
+For example, to find loblolly pine's code: lookup_forest_type(name='loblolly')
 
 Ownership codes (OWNGRPCD):
 - 10 = National Forest
@@ -1265,7 +1379,9 @@ Ownership codes (OWNGRPCD):
 - 30 = State & local government
 - 40 = Private
 
-Example: cond_domain='FORTYPCD == 141', grp_by='OWNGRPCD' → loblolly pine area by ownership
+Example workflow for "loblolly pine area by ownership":
+1. lookup_forest_type(name='loblolly') → finds FORTYPCD 161
+2. query_forest_area(states=['GA'], cond_domain='FORTYPCD == 161', grp_by='OWNGRPCD')
 
 ## Example Queries You Can Answer
 
