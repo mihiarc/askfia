@@ -46,7 +46,16 @@
       "mcp__render__get_service",
       "WebSearch",
       "WebFetch(domain:retz.dev)",
-      "Bash(ANTHROPIC_API_KEY=test-key uv run python:*)"
+      "Bash(ANTHROPIC_API_KEY=test-key uv run python:*)",
+      "Bash(ls:*)",
+      "Bash(pip index:*)",
+      "Bash(gh search:*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:api.github.com)",
+      "Bash(uv run pytest:*)",
+      "Bash(ANTHROPIC_API_KEY=test-key uv run pytest:*)",
+      "Bash(Loblolly-shortleaf pine: 8,500,000 acres\"\nEOF\n\\)\")"
     ]
   }
 }

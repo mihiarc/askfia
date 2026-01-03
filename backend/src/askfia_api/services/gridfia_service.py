@@ -26,9 +26,9 @@ logger = logging.getLogger(__name__)
 
 # Graceful degradation - check if GridFIA is available
 try:
+    import rasterio
     from gridfia import GridFIA
     from gridfia.utils.location_config import LocationConfig
-    import rasterio
 
     GRIDFIA_AVAILABLE = True
     logger.info("GridFIA is available - spatial analysis tools enabled")
@@ -291,9 +291,11 @@ class CloudDataService:
         the full array would be ~10 GB. By processing in 512x512 tiles, we keep
         memory usage under 1 GB.
 
-        Uses parallel Welford's algorithm for numerically stable, vectorized
+        Uses WelfordStatisticsAccumulator for numerically stable, vectorized
         computation of mean and variance across tiles.
         """
+        from .statistics import WelfordStatisticsAccumulator
+
         abbr = self._normalize_state(state)
         location_name = self._api._STATE_METADATA.get(abbr, {}).get("name", state)
 
@@ -307,19 +309,9 @@ class CloudDataService:
         # Peak with 4 arrays: ~20 MB, well under memory limits
         tile_size = 64
 
-        # Running statistics using parallel Welford's algorithm
-        # See: https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Parallel_algorithm
-        # For diversity metric
-        div_count = 0
-        div_mean = 0.0
-        div_m2 = 0.0  # Sum of squared differences from mean
-        div_min = float('inf')
-        div_max = float('-inf')
-
-        # For richness (always computed)
-        rich_count = 0
-        rich_mean = 0.0
-        rich_m2 = 0.0
+        # Use WelfordStatisticsAccumulator for running statistics
+        div_stats = WelfordStatisticsAccumulator()
+        rich_stats = WelfordStatisticsAccumulator()
         rich_max = 0
 
         # Process in tiles
@@ -369,61 +361,18 @@ class CloudDataService:
                 valid_div = tile_diversity[tile_forest_mask].ravel()
                 valid_rich = tile_richness[tile_forest_mask].ravel()
 
-                # Update diversity statistics using parallel Welford's algorithm
-                # This merges the tile statistics with running statistics
-                tile_n = len(valid_div)
-                if tile_n > 0:
-                    tile_mean = float(np.mean(valid_div))
-                    tile_m2 = float(np.sum((valid_div - tile_mean) ** 2))
-                    tile_min = float(np.min(valid_div))
-                    tile_max = float(np.max(valid_div))
-
-                    # Parallel merge of statistics
-                    if div_count == 0:
-                        div_count = tile_n
-                        div_mean = tile_mean
-                        div_m2 = tile_m2
-                        div_min = tile_min
-                        div_max = tile_max
-                    else:
-                        # Parallel Welford's formula
-                        combined_count = div_count + tile_n
-                        delta = tile_mean - div_mean
-                        div_mean = (div_count * div_mean + tile_n * tile_mean) / combined_count
-                        div_m2 = div_m2 + tile_m2 + delta ** 2 * div_count * tile_n / combined_count
-                        div_count = combined_count
-                        div_min = min(div_min, tile_min)
-                        div_max = max(div_max, tile_max)
-
-                # Update richness statistics using parallel Welford's algorithm
-                rich_tile_n = len(valid_rich)
-                if rich_tile_n > 0:
-                    rich_tile_mean = float(np.mean(valid_rich))
-                    rich_tile_m2 = float(np.sum((valid_rich - rich_tile_mean) ** 2))
-                    rich_tile_max = int(np.max(valid_rich))
-
-                    if rich_count == 0:
-                        rich_count = rich_tile_n
-                        rich_mean = rich_tile_mean
-                        rich_m2 = rich_tile_m2
-                        rich_max = rich_tile_max
-                    else:
-                        combined_count = rich_count + rich_tile_n
-                        delta = rich_tile_mean - rich_mean
-                        rich_mean = (rich_count * rich_mean + rich_tile_n * rich_tile_mean) / combined_count
-                        rich_m2 = rich_m2 + rich_tile_m2 + delta ** 2 * rich_count * rich_tile_n / combined_count
-                        rich_count = combined_count
-                        rich_max = max(rich_max, rich_tile_max)
+                # Update statistics using WelfordStatisticsAccumulator
+                div_stats.update(valid_div)
+                rich_stats.update(valid_rich)
+                if len(valid_rich) > 0:
+                    rich_max = max(rich_max, int(np.max(valid_rich)))
 
                 # Free memory explicitly
                 del tile_biomass, tile_presence, tile_richness, tile_diversity
                 del tile_forest_mask, valid_div, valid_rich
 
-        # Calculate final standard deviation
-        div_std = np.sqrt(div_m2 / div_count) if div_count > 1 else 0.0
-
         # Handle edge case where no forest pixels were found
-        if div_count == 0:
+        if div_stats.count == 0:
             return {
                 "location": location_name,
                 "metric": metric,
@@ -437,15 +386,18 @@ class CloudDataService:
                 "source": "cloud",
             }
 
+        div_result = div_stats.to_dict()
+        rich_result = rich_stats.to_dict()
+
         return {
             "location": location_name,
             "metric": metric,
-            "mean": float(div_mean),
-            "std": float(div_std),
-            "min": float(div_min),
-            "max": float(div_max),
-            "pixel_count": div_count,
-            "richness_mean": float(rich_mean),
+            "mean": div_result["mean"],
+            "std": div_result["std"],
+            "min": div_result["min"],
+            "max": div_result["max"],
+            "pixel_count": div_result["count"],
+            "richness_mean": rich_result["mean"],
             "richness_max": rich_max,
             "source": "cloud",
         }
@@ -483,29 +435,23 @@ class CloudDataService:
         """Synchronous biomass calculation from ZarrStore using chunked processing.
 
         This implementation processes data in spatial tiles to avoid loading the
-        entire array into memory. Uses parallel Welford's algorithm for numerically
+        entire array into memory. Uses WelfordStatisticsAccumulator for numerically
         stable, vectorized computation of mean and variance across tiles.
         """
+        from .statistics import WelfordStatisticsAccumulator
+
         abbr = self._normalize_state(state)
         location_name = self._api._STATE_METADATA.get(abbr, {}).get("name", state)
 
         # Get array shape without loading data
         num_species, height, width = store.shape
 
-        # Tile size for chunked processing
-        # Must account for multiple intermediate arrays during calculation:
-        # - tile_biomass, tile_presence, tile_proportions, tile_log_p
-        # With 326 species at 64x64: 326 * 64 * 64 * 4 = ~5 MB per array
-        # Peak with 4 arrays: ~20 MB, well under memory limits
+        # Tile size for chunked processing (64x64 keeps memory under 20 MB)
         tile_size = 64
 
-        # Running statistics using parallel Welford's algorithm
-        count = 0
-        mean = 0.0
-        m2 = 0.0  # Sum of squared differences from mean
+        # Use WelfordStatisticsAccumulator for running statistics
+        biomass_stats = WelfordStatisticsAccumulator()
         total_sum = 0.0  # Running sum for total biomass
-        min_val = float('inf')
-        max_val = float('-inf')
 
         # Calculate pixel area (30m resolution = 0.09 ha)
         pixel_area_ha = 0.09
@@ -518,7 +464,6 @@ class CloudDataService:
                 col_end = min(col_start + tile_size, width)
 
                 # Load only this tile (all species, limited spatial extent)
-                # Shape: (num_species, tile_height, tile_width)
                 tile_biomass = store.biomass[:, row_start:row_end, col_start:col_end]
 
                 # Calculate total biomass for this tile (sum across species)
@@ -528,49 +473,21 @@ class CloudDataService:
                 tile_forest_mask = tile_total > 0
 
                 if not np.any(tile_forest_mask):
-                    # No forest pixels in this tile, skip
                     del tile_biomass, tile_total, tile_forest_mask
                     continue
 
                 # Get valid biomass values (flattened)
                 valid_biomass = tile_total[tile_forest_mask].ravel()
 
-                # Update running statistics using parallel Welford's algorithm
-                tile_n = len(valid_biomass)
-                if tile_n > 0:
-                    tile_mean = float(np.mean(valid_biomass))
-                    tile_m2 = float(np.sum((valid_biomass - tile_mean) ** 2))
-                    tile_sum = float(np.sum(valid_biomass))
-                    tile_min = float(np.min(valid_biomass))
-                    tile_max = float(np.max(valid_biomass))
-
-                    # Parallel merge of statistics
-                    if count == 0:
-                        count = tile_n
-                        mean = tile_mean
-                        m2 = tile_m2
-                        total_sum = tile_sum
-                        min_val = tile_min
-                        max_val = tile_max
-                    else:
-                        # Parallel Welford's formula
-                        combined_count = count + tile_n
-                        delta = tile_mean - mean
-                        mean = (count * mean + tile_n * tile_mean) / combined_count
-                        m2 = m2 + tile_m2 + delta ** 2 * count * tile_n / combined_count
-                        total_sum += tile_sum
-                        count = combined_count
-                        min_val = min(min_val, tile_min)
-                        max_val = max(max_val, tile_max)
+                # Update statistics using WelfordStatisticsAccumulator
+                biomass_stats.update(valid_biomass)
+                total_sum += float(np.sum(valid_biomass))
 
                 # Free memory explicitly
                 del tile_biomass, tile_total, tile_forest_mask, valid_biomass
 
-        # Calculate final standard deviation
-        std = np.sqrt(m2 / count) if count > 1 else 0.0
-
         # Handle edge case where no forest pixels were found
-        if count == 0:
+        if biomass_stats.count == 0:
             return {
                 "location": location_name,
                 "mean_biomass_mgha": 0.0,
@@ -583,16 +500,17 @@ class CloudDataService:
                 "source": "cloud",
             }
 
-        area_hectares = count * pixel_area_ha
+        result = biomass_stats.to_dict()
+        area_hectares = result["count"] * pixel_area_ha
 
         return {
             "location": location_name,
-            "mean_biomass_mgha": float(mean),
-            "std": float(std),
-            "min": float(min_val),
-            "max": float(max_val),
+            "mean_biomass_mgha": result["mean"],
+            "std": result["std"],
+            "min": result["min"],
+            "max": result["max"],
             "total_biomass_mg": float(total_sum * pixel_area_ha),
-            "pixel_count": count,
+            "pixel_count": result["count"],
             "area_hectares": area_hectares,
             "source": "cloud",
         }
@@ -600,6 +518,627 @@ class CloudDataService:
     def is_available(self) -> bool:
         """Check if cloud data service is available."""
         return len(self._available_states) > 0
+
+
+class CONUSCloudService:
+    """Cloud-hosted data service for CONUS tile-based queries.
+
+    This service enables queries against pre-processed national forest data
+    stored as tiles on Backblaze B2. It maps state/county queries to the
+    appropriate tiles and aggregates results across multiple tiles.
+
+    The tile grid covers continental US (CONUS) with:
+    - 4096 x 4096 pixel tiles at 30m resolution
+    - EPSG:3857 (Web Mercator) projection
+    - ~1537 total tiles covering the continental US
+
+    Tiles are stored at: https://f005.backblazeb2.com/file/gridfia-conus/tiles/
+    """
+
+    # B2 public URL for CONUS tiles
+    B2_BASE_URL = "https://f005.backblazeb2.com/file/gridfia-conus"
+
+    # CONUS bounds in EPSG:3857 (Web Mercator)
+    CONUS_BOUNDS_3857 = {
+        "xmin": -13914936,
+        "ymin": 2814455,
+        "xmax": -7402746,
+        "ymax": 6360131,
+    }
+
+    # Tile specifications
+    TILE_SIZE_PX = 4096
+    PIXEL_SIZE_M = 30
+    TILE_SIZE_M = TILE_SIZE_PX * PIXEL_SIZE_M  # 122,880 meters
+
+    # State abbreviation to full name mapping
+    STATE_NAMES = {
+        "AL": "Alabama", "AK": "Alaska", "AZ": "Arizona", "AR": "Arkansas",
+        "CA": "California", "CO": "Colorado", "CT": "Connecticut", "DE": "Delaware",
+        "FL": "Florida", "GA": "Georgia", "HI": "Hawaii", "ID": "Idaho",
+        "IL": "Illinois", "IN": "Indiana", "IA": "Iowa", "KS": "Kansas",
+        "KY": "Kentucky", "LA": "Louisiana", "ME": "Maine", "MD": "Maryland",
+        "MA": "Massachusetts", "MI": "Michigan", "MN": "Minnesota", "MS": "Mississippi",
+        "MO": "Missouri", "MT": "Montana", "NE": "Nebraska", "NV": "Nevada",
+        "NH": "New Hampshire", "NJ": "New Jersey", "NM": "New Mexico", "NY": "New York",
+        "NC": "North Carolina", "ND": "North Dakota", "OH": "Ohio", "OK": "Oklahoma",
+        "OR": "Oregon", "PA": "Pennsylvania", "RI": "Rhode Island", "SC": "South Carolina",
+        "SD": "South Dakota", "TN": "Tennessee", "TX": "Texas", "UT": "Utah",
+        "VT": "Vermont", "VA": "Virginia", "WA": "Washington", "WV": "West Virginia",
+        "WI": "Wisconsin", "WY": "Wyoming", "DC": "District of Columbia",
+    }
+
+    # CONUS states (exclude Alaska, Hawaii)
+    CONUS_STATES = set(STATE_NAMES.keys()) - {"AK", "HI"}
+
+    def __init__(self, gridfia_api: "GridFIA | None" = None):
+        """Initialize CONUS cloud data service.
+
+        Args:
+            gridfia_api: GridFIA API instance for cloud access and species catalog.
+        """
+        self._api = gridfia_api
+        self._tile_store_cache: dict[str, Any] = {}  # Cache: tile_id -> ZarrStore
+        self._species_catalog: dict[str, str] = {}  # Cache: code -> name
+        self._available_tiles: set[str] = set()  # Tiles verified to exist
+        self._state_bounds_cache: dict[str, tuple] = {}  # Cache: state -> bbox_3857
+
+        # Grid dimensions
+        import math
+        extent_x = self.CONUS_BOUNDS_3857["xmax"] - self.CONUS_BOUNDS_3857["xmin"]
+        extent_y = self.CONUS_BOUNDS_3857["ymax"] - self.CONUS_BOUNDS_3857["ymin"]
+        self._num_cols = math.ceil(extent_x / self.TILE_SIZE_M)
+        self._num_rows = math.ceil(extent_y / self.TILE_SIZE_M)
+
+        logger.info(f"CONUSCloudService initialized: {self._num_cols}x{self._num_rows} tile grid")
+
+    def _normalize_state(self, state: str) -> str | None:
+        """Normalize state name to 2-letter abbreviation.
+
+        Returns None if state not recognized or not in CONUS.
+        """
+        state_clean = state.strip()
+
+        # Already an abbreviation?
+        if len(state_clean) == 2:
+            abbr = state_clean.upper()
+            if abbr in self.CONUS_STATES:
+                return abbr
+            return None
+
+        # Full name lookup (case-insensitive)
+        state_lower = state_clean.lower()
+        for abbr, name in self.STATE_NAMES.items():
+            if name.lower() == state_lower:
+                if abbr in self.CONUS_STATES:
+                    return abbr
+                return None
+
+        return None
+
+    def is_state_available(self, state: str) -> bool:
+        """Check if state is in CONUS (tile data potentially available)."""
+        abbr = self._normalize_state(state)
+        return abbr is not None
+
+    def _get_tile_id(self, col: int, row: int) -> str:
+        """Generate tile ID from column and row indices."""
+        return f"conus_{col:03d}_{row:03d}"
+
+    def _get_tile_bbox(self, col: int, row: int) -> tuple[float, float, float, float]:
+        """Get bounding box for a tile in EPSG:3857.
+
+        Returns:
+            Tuple of (xmin, ymin, xmax, ymax)
+        """
+        origin_x = self.CONUS_BOUNDS_3857["xmin"]
+        origin_y = self.CONUS_BOUNDS_3857["ymin"]
+
+        xmin = origin_x + col * self.TILE_SIZE_M
+        ymin = origin_y + row * self.TILE_SIZE_M
+        xmax = xmin + self.TILE_SIZE_M
+        ymax = ymin + self.TILE_SIZE_M
+        return (xmin, ymin, xmax, ymax)
+
+    def _get_tiles_for_bbox(
+        self, bbox: tuple[float, float, float, float]
+    ) -> list[tuple[int, int]]:
+        """Get all tile indices that intersect a bounding box in EPSG:3857.
+
+        Args:
+            bbox: (xmin, ymin, xmax, ymax) in EPSG:3857
+
+        Returns:
+            List of (col, row) tuples
+        """
+        xmin, ymin, xmax, ymax = bbox
+        origin_x = self.CONUS_BOUNDS_3857["xmin"]
+        origin_y = self.CONUS_BOUNDS_3857["ymin"]
+
+        # Calculate tile range
+        col_min = max(0, int((xmin - origin_x) / self.TILE_SIZE_M))
+        col_max = min(self._num_cols - 1, int((xmax - origin_x) / self.TILE_SIZE_M))
+        row_min = max(0, int((ymin - origin_y) / self.TILE_SIZE_M))
+        row_max = min(self._num_rows - 1, int((ymax - origin_y) / self.TILE_SIZE_M))
+
+        tiles = []
+        for row in range(row_min, row_max + 1):
+            for col in range(col_min, col_max + 1):
+                tiles.append((col, row))
+        return tiles
+
+    def _get_state_bbox_3857(self, state: str) -> tuple[float, float, float, float] | None:
+        """Get state bounding box in EPSG:3857.
+
+        Uses geopandas to get state boundaries and reproject to Web Mercator.
+        Results are cached.
+        """
+        abbr = self._normalize_state(state)
+        if abbr is None:
+            return None
+
+        if abbr in self._state_bounds_cache:
+            return self._state_bounds_cache[abbr]
+
+        try:
+            import geopandas as gpd
+            from pyproj import CRS
+
+            # Get state boundaries from census data (Natural Earth or similar)
+            # This uses the built-in US states dataset
+            states_url = "https://www2.census.gov/geo/tiger/GENZ2021/shp/cb_2021_us_state_500k.zip"
+
+            # Try to load from cache or download
+            try:
+                states_gdf = gpd.read_file(states_url)
+            except Exception:
+                # Fall back to approximate bounds for common states
+                logger.warning(f"Could not load state boundaries, using approximate bounds for {abbr}")
+                return self._get_approximate_state_bounds(abbr)
+
+            # Filter to our state
+            state_gdf = states_gdf[states_gdf["STUSPS"] == abbr]
+            if state_gdf.empty:
+                logger.warning(f"State {abbr} not found in boundaries file")
+                return None
+
+            # Reproject to EPSG:3857
+            state_gdf = state_gdf.to_crs(CRS.from_epsg(3857))
+
+            # Get bounds
+            bounds = state_gdf.total_bounds  # [xmin, ymin, xmax, ymax]
+            bbox = (bounds[0], bounds[1], bounds[2], bounds[3])
+
+            self._state_bounds_cache[abbr] = bbox
+            logger.info(f"State {abbr} bbox (3857): {bbox}")
+            return bbox
+
+        except Exception as e:
+            logger.error(f"Error getting state bounds for {abbr}: {e}")
+            return self._get_approximate_state_bounds(abbr)
+
+    def _get_approximate_state_bounds(self, abbr: str) -> tuple[float, float, float, float] | None:
+        """Get approximate state bounds in EPSG:3857 for fallback.
+
+        These are rough estimates for the most common states.
+        """
+        # Approximate bounds in EPSG:3857 for some states
+        # Format: (xmin, ymin, xmax, ymax)
+        APPROX_BOUNDS = {
+            "NC": (-9424000, 4005000, -8399000, 4380000),
+            "VA": (-9176000, 4359000, -8345000, 4796000),
+            "TX": (-11689000, 2960000, -9381000, 4277000),
+            "CA": (-13856000, 3764000, -12638000, 5162000),
+            "FL": (-9858000, 2787000, -8894000, 3640000),
+            "GA": (-9472000, 3586000, -8926000, 3990000),
+            "RI": (-8014000, 5068000, -7904000, 5175000),
+            "CT": (-8155000, 5021000, -7978000, 5160000),
+        }
+
+        return APPROX_BOUNDS.get(abbr)
+
+    def _get_tiles_for_state(self, state: str) -> list[str]:
+        """Get tile IDs that cover a state.
+
+        Args:
+            state: State name or abbreviation
+
+        Returns:
+            List of tile IDs (e.g., ["conus_027_015", "conus_027_016", ...])
+        """
+        bbox = self._get_state_bbox_3857(state)
+        if bbox is None:
+            return []
+
+        tile_indices = self._get_tiles_for_bbox(bbox)
+        return [self._get_tile_id(col, row) for col, row in tile_indices]
+
+    def _get_tile_url(self, tile_id: str) -> str:
+        """Get the B2 URL for a tile's Zarr store."""
+        return f"{self.B2_BASE_URL}/tiles/{tile_id}/biomass.zarr"
+
+    def _load_tile_store(self, tile_id: str) -> Any | None:
+        """Load a tile's ZarrStore from B2, with caching.
+
+        Returns None if tile doesn't exist or can't be loaded.
+        """
+        if tile_id in self._tile_store_cache:
+            return self._tile_store_cache[tile_id]
+
+        url = self._get_tile_url(tile_id)
+
+        try:
+            # Import ZarrStore from gridfia
+            from gridfia.utils.zarr_utils import ZarrStore
+
+            logger.info(f"Loading tile {tile_id} from {url}")
+            store = ZarrStore.from_url(url)
+            self._tile_store_cache[tile_id] = store
+            self._available_tiles.add(tile_id)
+            return store
+
+        except Exception as e:
+            logger.warning(f"Could not load tile {tile_id}: {e}")
+            return None
+
+    async def get_diversity_stats(
+        self,
+        state: str,
+        county: str | None = None,
+        metric: str = "shannon"
+    ) -> dict[str, Any] | None:
+        """Get diversity statistics from CONUS tiles.
+
+        Maps the state/county to tiles and aggregates diversity stats
+        across all relevant tiles using parallel Welford's algorithm.
+
+        Returns None if state not in CONUS (falls back to other services).
+        County-level queries use state bounds for now (TODO: county bounds).
+        """
+        if not self.is_state_available(state):
+            return None
+
+        # Get tiles for this state
+        tile_ids = self._get_tiles_for_state(state)
+        if not tile_ids:
+            logger.warning(f"No tiles found for state: {state}")
+            return None
+
+        logger.info(f"State {state} spans {len(tile_ids)} tiles")
+
+        # Calculate diversity across tiles
+        try:
+            loop = asyncio.get_running_loop()
+            result = await loop.run_in_executor(
+                None, self._calculate_diversity_across_tiles, tile_ids, state, metric
+            )
+            return result
+        except Exception as e:
+            logger.error(f"Error calculating diversity from CONUS tiles: {e}")
+            return None
+
+    def _calculate_diversity_across_tiles(
+        self,
+        tile_ids: list[str],
+        state: str,
+        metric: str
+    ) -> dict[str, Any]:
+        """Synchronous diversity calculation across multiple tiles.
+
+        Uses WelfordStatisticsAccumulator to aggregate stats across tiles
+        without loading all data into memory.
+        """
+        from .statistics import WelfordStatisticsAccumulator
+
+        abbr = self._normalize_state(state)
+        location_name = self.STATE_NAMES.get(abbr, state)
+
+        # Accumulators for running statistics
+        div_stats = WelfordStatisticsAccumulator()
+        rich_stats = WelfordStatisticsAccumulator()
+        rich_max = 0
+
+        tiles_processed = 0
+        tiles_failed = 0
+
+        for tile_id in tile_ids:
+            store = self._load_tile_store(tile_id)
+            if store is None:
+                tiles_failed += 1
+                continue
+
+            try:
+                # Process this tile with chunked calculation
+                tile_result = self._calculate_tile_diversity(store, metric)
+
+                if tile_result["count"] == 0:
+                    continue
+
+                tiles_processed += 1
+
+                # Merge diversity stats using accumulator
+                tile_div = WelfordStatisticsAccumulator.from_stats(
+                    count=tile_result["count"],
+                    mean=tile_result["mean"],
+                    m2=tile_result["m2"],
+                    min_val=tile_result["min"],
+                    max_val=tile_result["max"],
+                )
+                div_stats.merge(tile_div)
+
+                # Merge richness stats
+                if tile_result["rich_count"] > 0:
+                    tile_rich = WelfordStatisticsAccumulator.from_stats(
+                        count=tile_result["rich_count"],
+                        mean=tile_result["rich_mean"],
+                        m2=tile_result["rich_m2"],
+                    )
+                    rich_stats.merge(tile_rich)
+                    rich_max = max(rich_max, tile_result["rich_max"])
+
+            except Exception as e:
+                logger.warning(f"Error processing tile {tile_id}: {e}")
+                tiles_failed += 1
+                continue
+
+        logger.info(f"Processed {tiles_processed} tiles, {tiles_failed} failed")
+
+        if div_stats.count == 0:
+            return {
+                "location": location_name,
+                "metric": metric,
+                "mean": 0.0,
+                "std": 0.0,
+                "min": 0.0,
+                "max": 0.0,
+                "pixel_count": 0,
+                "richness_mean": 0.0,
+                "richness_max": 0,
+                "source": "conus_tiles",
+                "tiles_processed": tiles_processed,
+            }
+
+        div_result = div_stats.to_dict()
+        return {
+            "location": location_name,
+            "metric": metric,
+            "mean": div_result["mean"],
+            "std": div_result["std"],
+            "min": div_result["min"],
+            "max": div_result["max"],
+            "pixel_count": div_result["count"],
+            "richness_mean": rich_stats.mean if rich_stats.count > 0 else 0.0,
+            "richness_max": rich_max,
+            "source": "conus_tiles",
+            "tiles_processed": tiles_processed,
+        }
+
+    def _calculate_tile_diversity(self, store: Any, metric: str) -> dict[str, Any]:
+        """Calculate diversity stats for a single tile using chunked processing.
+
+        Returns intermediate statistics suitable for parallel Welford aggregation.
+        Uses WelfordStatisticsAccumulator for numerically stable computation.
+        """
+        from .statistics import WelfordStatisticsAccumulator
+
+        num_species, height, width = store.shape
+        tile_size = 64  # Process in 64x64 chunks
+
+        # Use accumulators for running stats
+        div_stats = WelfordStatisticsAccumulator()
+        rich_stats = WelfordStatisticsAccumulator()
+        rich_max = 0
+
+        for row_start in range(0, height, tile_size):
+            row_end = min(row_start + tile_size, height)
+
+            for col_start in range(0, width, tile_size):
+                col_end = min(col_start + tile_size, width)
+
+                # Load chunk
+                chunk_biomass = store.biomass[:, row_start:row_end, col_start:col_end]
+
+                # Calculate presence and richness
+                chunk_presence = (chunk_biomass > 0).astype(np.float32)
+                chunk_richness = np.sum(chunk_presence, axis=0)
+                chunk_forest_mask = chunk_richness > 0
+
+                if not np.any(chunk_forest_mask):
+                    continue
+
+                # Calculate diversity metric
+                if metric == "richness":
+                    chunk_diversity = chunk_richness
+                elif metric == "shannon":
+                    chunk_total = np.sum(chunk_biomass, axis=0)
+                    chunk_total = np.where(chunk_total > 0, chunk_total, 1)
+                    chunk_proportions = chunk_biomass / chunk_total
+                    chunk_log_p = np.where(chunk_proportions > 0, np.log(chunk_proportions), 0)
+                    chunk_diversity = -np.sum(chunk_proportions * chunk_log_p, axis=0)
+                elif metric == "simpson":
+                    chunk_total = np.sum(chunk_biomass, axis=0)
+                    chunk_total = np.where(chunk_total > 0, chunk_total, 1)
+                    chunk_proportions = chunk_biomass / chunk_total
+                    chunk_diversity = 1 - np.sum(chunk_proportions ** 2, axis=0)
+                else:
+                    raise ValueError(f"Unknown metric: {metric}")
+
+                # Get valid values
+                valid_div = chunk_diversity[chunk_forest_mask].ravel()
+                valid_rich = chunk_richness[chunk_forest_mask].ravel()
+
+                # Update accumulators
+                div_stats.update(valid_div)
+                rich_stats.update(valid_rich)
+                if len(valid_rich) > 0:
+                    rich_max = max(rich_max, int(np.max(valid_rich)))
+
+                # Free memory
+                del chunk_biomass, chunk_presence, chunk_richness, chunk_diversity
+
+        return {
+            "count": div_stats.count,
+            "mean": div_stats.mean,
+            "m2": div_stats.m2,
+            "min": div_stats.min_val if div_stats.count > 0 else 0.0,
+            "max": div_stats.max_val if div_stats.count > 0 else 0.0,
+            "rich_count": rich_stats.count,
+            "rich_mean": rich_stats.mean,
+            "rich_m2": rich_stats.m2,
+            "rich_max": rich_max,
+        }
+
+    async def get_biomass_stats(
+        self,
+        state: str,
+        county: str | None = None
+    ) -> dict[str, Any] | None:
+        """Get biomass statistics from CONUS tiles.
+
+        Returns None if state not in CONUS (falls back to other services).
+        """
+        if not self.is_state_available(state):
+            return None
+
+        tile_ids = self._get_tiles_for_state(state)
+        if not tile_ids:
+            return None
+
+        try:
+            loop = asyncio.get_running_loop()
+            result = await loop.run_in_executor(
+                None, self._calculate_biomass_across_tiles, tile_ids, state
+            )
+            return result
+        except Exception as e:
+            logger.error(f"Error calculating biomass from CONUS tiles: {e}")
+            return None
+
+    def _calculate_biomass_across_tiles(
+        self,
+        tile_ids: list[str],
+        state: str
+    ) -> dict[str, Any]:
+        """Synchronous biomass calculation across multiple tiles.
+
+        Uses WelfordStatisticsAccumulator for numerically stable aggregation.
+        """
+        from .statistics import WelfordStatisticsAccumulator
+
+        abbr = self._normalize_state(state)
+        location_name = self.STATE_NAMES.get(abbr, state)
+
+        biomass_stats = WelfordStatisticsAccumulator()
+        total_sum = 0.0
+        tiles_processed = 0
+        pixel_area_ha = 0.09
+
+        for tile_id in tile_ids:
+            store = self._load_tile_store(tile_id)
+            if store is None:
+                continue
+
+            try:
+                tile_result = self._calculate_tile_biomass(store)
+
+                if tile_result["count"] == 0:
+                    continue
+
+                tiles_processed += 1
+
+                # Merge stats using accumulator
+                tile_stats = WelfordStatisticsAccumulator.from_stats(
+                    count=tile_result["count"],
+                    mean=tile_result["mean"],
+                    m2=tile_result["m2"],
+                    min_val=tile_result["min"],
+                    max_val=tile_result["max"],
+                )
+                biomass_stats.merge(tile_stats)
+                total_sum += tile_result["sum"]
+
+            except Exception as e:
+                logger.warning(f"Error processing tile {tile_id} for biomass: {e}")
+                continue
+
+        if biomass_stats.count == 0:
+            return {
+                "location": location_name,
+                "mean_biomass_mgha": 0.0,
+                "std": 0.0,
+                "min": 0.0,
+                "max": 0.0,
+                "total_biomass_mg": 0.0,
+                "pixel_count": 0,
+                "area_hectares": 0.0,
+                "source": "conus_tiles",
+                "tiles_processed": tiles_processed,
+            }
+
+        result = biomass_stats.to_dict()
+        area_hectares = result["count"] * pixel_area_ha
+
+        return {
+            "location": location_name,
+            "mean_biomass_mgha": result["mean"],
+            "std": result["std"],
+            "min": result["min"],
+            "max": result["max"],
+            "total_biomass_mg": float(total_sum * pixel_area_ha),
+            "pixel_count": result["count"],
+            "area_hectares": area_hectares,
+            "source": "conus_tiles",
+            "tiles_processed": tiles_processed,
+        }
+
+    def _calculate_tile_biomass(self, store: Any) -> dict[str, Any]:
+        """Calculate biomass stats for a single tile.
+
+        Uses WelfordStatisticsAccumulator for numerically stable computation.
+        """
+        from .statistics import WelfordStatisticsAccumulator
+
+        num_species, height, width = store.shape
+        tile_size = 64
+
+        biomass_stats = WelfordStatisticsAccumulator()
+        total_sum = 0.0
+
+        for row_start in range(0, height, tile_size):
+            row_end = min(row_start + tile_size, height)
+
+            for col_start in range(0, width, tile_size):
+                col_end = min(col_start + tile_size, width)
+
+                chunk_biomass = store.biomass[:, row_start:row_end, col_start:col_end]
+                chunk_total = np.sum(chunk_biomass, axis=0)
+                chunk_forest_mask = chunk_total > 0
+
+                if not np.any(chunk_forest_mask):
+                    del chunk_biomass, chunk_total, chunk_forest_mask
+                    continue
+
+                valid_biomass = chunk_total[chunk_forest_mask].ravel()
+
+                # Update accumulator
+                biomass_stats.update(valid_biomass)
+                total_sum += float(np.sum(valid_biomass))
+
+                del chunk_biomass, chunk_total, chunk_forest_mask, valid_biomass
+
+        return {
+            "count": biomass_stats.count,
+            "mean": biomass_stats.mean,
+            "m2": biomass_stats.m2,
+            "sum": total_sum,
+            "min": biomass_stats.min_val if biomass_stats.count > 0 else 0.0,
+            "max": biomass_stats.max_val if biomass_stats.count > 0 else 0.0,
+        }
+
+    def is_available(self) -> bool:
+        """Check if CONUS cloud service is available."""
+        # Always available for CONUS states (tiles may still be processing)
+        return True
 
 
 class TileService:
@@ -715,11 +1254,14 @@ class GridFIAService:
 
         # Cloud services - pass API for B2 streaming
         self._cloud_service = CloudDataService(gridfia_api=self._api)
+        self._conus_service = CONUSCloudService(gridfia_api=self._api)
         self._tile_service = TileService()
 
         logger.info(f"GridFIA service initialized with cache at {self._cache_dir}")
         if self._cloud_service.is_available():
             logger.info(f"Cloud streaming enabled for states: {self._cloud_service._available_states}")
+        if self._conus_service.is_available():
+            logger.info("CONUS tile service enabled for continental US states")
 
     @lru_cache(maxsize=100)
     def _get_location_config_cached(
@@ -860,12 +1402,17 @@ class GridFIAService:
         Returns:
             Dictionary containing diversity statistics and metadata.
         """
-        # Try cloud data first (Phase 2)
+        # Try state-level cloud data first (small states with pre-processed stores)
         cloud_result = await self._cloud_service.get_diversity_stats(state, county, metric)
         if cloud_result is not None:
             return cloud_result
 
-        # Fall back to local calculation
+        # Try CONUS tile service for continental US (tile-based processing)
+        conus_result = await self._conus_service.get_diversity_stats(state, county, metric)
+        if conus_result is not None:
+            return conus_result
+
+        # Fall back to local calculation (downloads data from FIA API)
         loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(
             None, self._calculate_diversity_sync, state, county, metric
@@ -948,12 +1495,17 @@ class GridFIAService:
         Returns:
             Dictionary containing biomass statistics and metadata.
         """
-        # Try cloud data first (Phase 2)
+        # Try state-level cloud data first (small states with pre-processed stores)
         cloud_result = await self._cloud_service.get_biomass_stats(state, county)
         if cloud_result is not None:
             return cloud_result
 
-        # Fall back to local calculation
+        # Try CONUS tile service for continental US (tile-based processing)
+        conus_result = await self._conus_service.get_biomass_stats(state, county)
+        if conus_result is not None:
+            return conus_result
+
+        # Fall back to local calculation (downloads data from FIA API)
         loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(
             None, self._calculate_biomass_sync, state, county
@@ -1078,8 +1630,8 @@ class GridFIAServiceExtended(GridFIAService):
         # Ensure Zarr store exists
         zarr_path = self._ensure_zarr_exists(state, county)
 
-        import zarr
         import numpy as np
+        import zarr
 
         # Open the Zarr store and analyze species biomass
         store = zarr.open(zarr_path, mode='r')
@@ -1241,8 +1793,8 @@ class GridFIAServiceExtended(GridFIAService):
         # Ensure Zarr store exists with the requested species
         zarr_path = self._ensure_zarr_exists(state, county, species_codes=[species_code])
 
-        import zarr
         import numpy as np
+        import zarr
 
         store = zarr.open(zarr_path, mode='r')
         species_codes = list(store['species_codes'][:])

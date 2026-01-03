@@ -154,6 +154,38 @@ class WelfordStatisticsAccumulator:
         self.min_val = float("inf")
         self.max_val = float("-inf")
 
+    @classmethod
+    def from_stats(
+        cls,
+        count: int,
+        mean: float,
+        m2: float,
+        min_val: float = float("inf"),
+        max_val: float = float("-inf"),
+    ) -> WelfordStatisticsAccumulator:
+        """Create an accumulator from pre-computed statistics.
+
+        This is useful for reconstructing accumulators from intermediate results,
+        such as when aggregating statistics from multiple tiles or workers.
+
+        Args:
+            count: Total number of values.
+            mean: Mean of the values.
+            m2: Sum of squared differences from the mean.
+            min_val: Minimum value.
+            max_val: Maximum value.
+
+        Returns:
+            A new WelfordStatisticsAccumulator initialized with the given stats.
+        """
+        return cls(
+            count=count,
+            mean=mean,
+            m2=m2,
+            min_val=min_val,
+            max_val=max_val,
+        )
+
 
 class SEAggregator:
     """Aggregator for combining standard errors using variance propagation.
