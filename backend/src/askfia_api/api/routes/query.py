@@ -1,6 +1,6 @@
 """Direct query endpoints for FIA data."""
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends
 
 from ...auth import require_auth
 from ...models.schemas import (
@@ -11,83 +11,86 @@ from ...models.schemas import (
     BiomassQuery,
     BiomassResponse,
     TPAQuery,
+    TPAResponse,
     CompareQuery,
     CompareResponse,
 )
-from ...services.fia_service import fia_service
+from ...services.container import get_fia_service
+from ...services.fia_service import FIAService
+from ..exceptions import with_error_handling
 
 # All query endpoints require authentication
 router = APIRouter(dependencies=[require_auth])
 
 
 @router.post("/area", response_model=AreaResponse)
-async def query_area(query: AreaQuery):
+@with_error_handling
+async def query_area(
+    query: AreaQuery, fia_service: FIAService = Depends(get_fia_service)
+):
     """Query forest land area for specified states."""
-    try:
-        result = await fia_service.query_area(
-            states=query.states,
-            land_type=query.land_type,
-            grp_by=query.grp_by,
-        )
-        return AreaResponse(**result)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    result = await fia_service.query_area(
+        states=query.states,
+        land_type=query.land_type,
+        grp_by=query.grp_by,
+    )
+    return AreaResponse(**result)
 
 
 @router.post("/volume", response_model=VolumeResponse)
-async def query_volume(query: VolumeQuery):
+@with_error_handling
+async def query_volume(
+    query: VolumeQuery, fia_service: FIAService = Depends(get_fia_service)
+):
     """Query timber volume for specified states."""
-    try:
-        result = await fia_service.query_volume(
-            states=query.states,
-            by_species=query.by_species,
-            tree_domain=query.tree_domain,
-        )
-        return VolumeResponse(**result)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    result = await fia_service.query_volume(
+        states=query.states,
+        by_species=query.by_species,
+        tree_domain=query.tree_domain,
+    )
+    return VolumeResponse(**result)
 
 
 @router.post("/biomass", response_model=BiomassResponse)
-async def query_biomass(query: BiomassQuery):
+@with_error_handling
+async def query_biomass(
+    query: BiomassQuery, fia_service: FIAService = Depends(get_fia_service)
+):
     """Query biomass and carbon for specified states."""
-    try:
-        result = await fia_service.query_biomass(
-            states=query.states,
-            land_type=query.land_type,
-            by_species=query.by_species,
-        )
-        return BiomassResponse(**result)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    result = await fia_service.query_biomass(
+        states=query.states,
+        land_type=query.land_type,
+        by_species=query.by_species,
+    )
+    return BiomassResponse(**result)
 
 
-@router.post("/tpa")
-async def query_tpa(query: TPAQuery):
+@router.post("/tpa", response_model=TPAResponse)
+@with_error_handling
+async def query_tpa(
+    query: TPAQuery, fia_service: FIAService = Depends(get_fia_service)
+):
     """Query trees per acre for specified states."""
-    try:
-        result = await fia_service.query_tpa(
-            states=query.states,
-            tree_domain=query.tree_domain,
-            by_species=query.by_species,
-        )
-        return result
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    result = await fia_service.query_tpa(
+        states=query.states,
+        tree_domain=query.tree_domain,
+        by_species=query.by_species,
+    )
+    return TPAResponse(**result)
 
 
 @router.post("/compare", response_model=CompareResponse)
-async def compare_states(query: CompareQuery):
+@with_error_handling
+async def compare_states(
+    query: CompareQuery, fia_service: FIAService = Depends(get_fia_service)
+):
     """Compare a metric across multiple states."""
-    try:
-        result = await fia_service.compare_states(
-            states=query.states,
-            metric=query.metric,
-            land_type=query.land_type,
-        )
-        return CompareResponse(**result)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    result = await fia_service.compare_states(
+        states=query.states,
+        metric=query.metric,
+        land_type=query.land_type,
+    )
+    return CompareResponse(**result)
 
 
 @router.get("/states")

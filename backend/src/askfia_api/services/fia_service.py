@@ -11,6 +11,7 @@ import pandas as pd
 
 from ..config import settings
 from . import species_data
+from .statistics import SEAggregator
 from .storage import storage
 
 logger = logging.getLogger(__name__)
@@ -178,22 +179,8 @@ def _get_se_column(df: pd.DataFrame, metric: str) -> str | None:
     return None
 
 
-def _calculate_se_percent(se_value: float, estimate: float) -> float:
-    """Calculate SE as a percentage of the estimate.
-
-    SE% = (SE / Estimate) * 100
-
-    Args:
-        se_value: Standard error in the same units as the estimate
-        estimate: The estimate value
-
-    Returns:
-        SE as a percentage (e.g., 5.2 means 5.2%)
-    """
-    if estimate <= 0 or se_value <= 0:
-        return 0.0
-    return (se_value / estimate) * 100
-
+# Use SEAggregator for SE% calculations - backward compatibility alias
+_calculate_se_percent = SEAggregator.calculate_se_percent
 
 # Keep backward compatibility alias
 _get_se_percent_column = _get_se_column
@@ -292,10 +279,10 @@ class FIAService:
         se_col = _get_se_column(combined, "area")
 
         total_area = float(combined[est_col].sum())
-        # Calculate SE% properly: combine SEs using variance propagation, then convert to %
+        # Calculate SE% using SEAggregator for variance propagation
         if se_col and se_col in combined.columns:
-            combined_se = float((combined[se_col].dropna() ** 2).sum() ** 0.5)
-            se_pct = _calculate_se_percent(combined_se, total_area)
+            combined_se = SEAggregator.combine_se(combined[se_col])
+            se_pct = SEAggregator.calculate_se_percent(combined_se, total_area)
         else:
             se_pct = 0.0
 
@@ -343,10 +330,10 @@ class FIAService:
         se_col = _get_se_column(combined, "volume")
 
         total_vol = float(combined[est_col].sum())
-        # Calculate SE% properly
+        # Calculate SE% using SEAggregator for variance propagation
         if se_col and se_col in combined.columns:
-            combined_se = float((combined[se_col].dropna() ** 2).sum() ** 0.5)
-            se_pct = _calculate_se_percent(combined_se, total_vol)
+            combined_se = SEAggregator.combine_se(combined[se_col])
+            se_pct = SEAggregator.calculate_se_percent(combined_se, total_vol)
         else:
             se_pct = 0.0
 
@@ -410,11 +397,11 @@ class FIAService:
         )
 
         # Get SE if available (pyFIA returns BIO_TOTAL_SE)
+        # Calculate SE% using SEAggregator for variance propagation
         se_col = _get_se_percent_column(combined, "biomass")
         if se_col and se_col in combined.columns:
-            # Calculate SE as percentage of total
-            total_se = float(combined[se_col].sum()) if se_col else 0.0
-            se_pct = (total_se / total_biomass * 100) if total_biomass > 0 else 0.0
+            combined_se = SEAggregator.combine_se(combined[se_col])
+            se_pct = SEAggregator.calculate_se_percent(combined_se, total_biomass)
         else:
             se_pct = 0.0
 
@@ -481,10 +468,10 @@ class FIAService:
         se_col = _get_se_column(combined, "tpa")
 
         total_tpa = float(combined[est_col].sum())
-        # Calculate SE% properly
+        # Calculate SE% using SEAggregator for variance propagation
         if se_col and se_col in combined.columns:
-            combined_se = float((combined[se_col].dropna() ** 2).sum() ** 0.5)
-            se_pct = _calculate_se_percent(combined_se, total_tpa)
+            combined_se = SEAggregator.combine_se(combined[se_col])
+            se_pct = SEAggregator.calculate_se_percent(combined_se, total_tpa)
         else:
             se_pct = 0.0
 
@@ -595,15 +582,12 @@ class FIAService:
             else 0.0
         )
 
-        # Get SE if available
-        se_col = None
-        if "MORT_TOTAL_SE" in combined.columns:
-            se_col = "MORT_TOTAL_SE"
+        # Get SE if available - use SEAggregator for variance propagation
+        se_col = "MORT_TOTAL_SE" if "MORT_TOTAL_SE" in combined.columns else None
 
         if se_col:
-            # Calculate SE as percentage of total
-            total_se = float(combined[se_col].sum())
-            se_pct = (total_se / total_mortality * 100) if total_mortality > 0 else 0.0
+            combined_se = SEAggregator.combine_se(combined[se_col])
+            se_pct = SEAggregator.calculate_se_percent(combined_se, total_mortality)
         else:
             se_pct = 0.0
 
@@ -666,15 +650,12 @@ class FIAService:
             else 0.0
         )
 
-        # Get SE if available
-        se_col = None
-        if "REMOVALS_TOTAL_SE" in combined.columns:
-            se_col = "REMOVALS_TOTAL_SE"
+        # Get SE if available - use SEAggregator for variance propagation
+        se_col = "REMOVALS_TOTAL_SE" if "REMOVALS_TOTAL_SE" in combined.columns else None
 
         if se_col:
-            # Calculate SE as percentage of total
-            total_se = float(combined[se_col].sum())
-            se_pct = (total_se / total_removals * 100) if total_removals > 0 else 0.0
+            combined_se = SEAggregator.combine_se(combined[se_col])
+            se_pct = SEAggregator.calculate_se_percent(combined_se, total_removals)
         else:
             se_pct = 0.0
 
@@ -793,15 +774,12 @@ class FIAService:
             else 0.0
         )
 
-        # Get SE if available
-        se_col = None
-        if "GROWTH_TOTAL_SE" in combined.columns:
-            se_col = "GROWTH_TOTAL_SE"
+        # Get SE if available - use SEAggregator for variance propagation
+        se_col = "GROWTH_TOTAL_SE" if "GROWTH_TOTAL_SE" in combined.columns else None
 
         if se_col:
-            # Calculate SE as percentage of total
-            total_se = float(combined[se_col].sum())
-            se_pct = (total_se / total_growth * 100) if total_growth > 0 else 0.0
+            combined_se = SEAggregator.combine_se(combined[se_col])
+            se_pct = SEAggregator.calculate_se_percent(combined_se, total_growth)
         else:
             se_pct = 0.0
 
@@ -886,15 +864,13 @@ class FIAService:
             else 0.0
         )
 
-        # Get SE if available
-        se_col = None
-        if "SE" in combined.columns:
-            se_col = "SE"
+        # Get SE if available - use SEAggregator for variance propagation
+        se_col = "SE" if "SE" in combined.columns else None
 
         if se_col:
-            # Calculate SE as percentage of total (absolute value for division)
-            total_se = float(combined[se_col].sum())
-            se_pct = (total_se / abs(total_change) * 100) if total_change != 0 else 0.0
+            combined_se = SEAggregator.combine_se(combined[se_col])
+            # Use absolute value for area change since it can be negative
+            se_pct = SEAggregator.calculate_se_percent(combined_se, abs(total_change))
         else:
             se_pct = 0.0
 
@@ -973,20 +949,15 @@ class FIAService:
         # Calculate total
         total_estimate = float(combined[est_col].sum())
 
-        # Calculate SE percent - handle different SE column formats
+        # Calculate SE percent using SEAggregator for variance propagation
         if se_col and se_col in combined.columns:
-            # If we have SE_PERCENT column, use it
+            # If we have SE_PERCENT column, use it (weighted average would be more correct)
             if "PERCENT" in se_col.upper():
                 se_pct = float(combined[se_col].mean(skipna=True))
             else:
-                # If we have absolute SE (e.g., AREA_SE), calculate percent
-                # SE percent = (SE / estimate) * 100
-                # Filter out NaN values before summing
-                se_values = combined[se_col].dropna()
-                total_se = float(se_values.sum()) if len(se_values) > 0 else 0.0
-                se_pct = (
-                    (total_se / total_estimate * 100) if total_estimate > 0 else 0.0
-                )
+                # If we have absolute SE, use variance propagation
+                combined_se = SEAggregator.combine_se(combined[se_col])
+                se_pct = SEAggregator.calculate_se_percent(combined_se, total_estimate)
         else:
             se_pct = 0.0
 
@@ -1072,15 +1043,15 @@ class FIAService:
         est_col = _get_estimate_column(combined, metric)
         se_col = _get_se_column(combined, metric)
 
-        # Aggregation function for SE: combine using sqrt(sum(SE^2))
-        def combine_se(x):
-            return (x**2).sum() ** 0.5
+        # Use SEAggregator for SE combination
+        def combine_se_agg(x):
+            return SEAggregator.combine_se(x)
 
         # Aggregate by forest type across states
         if "FOREST_TYPE_NAME" in combined.columns:
             agg_dict = {est_col: "sum"}
             if se_col:
-                agg_dict[se_col] = combine_se
+                agg_dict[se_col] = combine_se_agg
             grouped = (
                 combined.groupby(["FORTYPCD", "FOREST_TYPE_NAME"], dropna=False)
                 .agg(agg_dict)
@@ -1090,7 +1061,7 @@ class FIAService:
             # Final fallback if something went wrong
             agg_dict = {est_col: "sum"}
             if se_col:
-                agg_dict[se_col] = combine_se
+                agg_dict[se_col] = combine_se_agg
             grouped = (
                 combined.groupby(["FORTYPCD"], dropna=False)
                 .agg(agg_dict)
@@ -1099,10 +1070,10 @@ class FIAService:
             grouped["FOREST_TYPE_NAME"] = "Unknown"
 
         total_estimate = float(grouped[est_col].sum())
-        # Calculate overall SE% properly
+        # Calculate overall SE% using SEAggregator for variance propagation
         if se_col and se_col in grouped.columns:
-            overall_se_value = float((grouped[se_col].dropna() ** 2).sum() ** 0.5)
-            overall_se = _calculate_se_percent(overall_se_value, total_estimate)
+            overall_se_value = SEAggregator.combine_se(grouped[se_col])
+            overall_se = SEAggregator.calculate_se_percent(overall_se_value, total_estimate)
         else:
             overall_se = 0.0
 
@@ -1190,10 +1161,10 @@ class FIAService:
                     se_col = _get_se_column(df, metric)
 
                     estimate = float(df[est_col].sum())
-                    # Calculate SE% properly
+                    # Calculate SE% using SEAggregator for variance propagation
                     if se_col and se_col in df.columns:
-                        combined_se = float((df[se_col].dropna() ** 2).sum() ** 0.5)
-                        se_pct = _calculate_se_percent(combined_se, estimate)
+                        combined_se = SEAggregator.combine_se(df[se_col])
+                        se_pct = SEAggregator.calculate_se_percent(combined_se, estimate)
                     else:
                         se_pct = None
 
@@ -1304,13 +1275,10 @@ class FIAService:
             subset = combined[combined["OWNGRPCD"] == owngrpcd]
             estimate = float(subset[est_col].sum())
 
-            # Calculate SE% properly: SE values need to be combined using variance propagation
-            # For sums: Var(sum) = sum(Var) assuming independence, so SE = sqrt(sum(SE^2))
+            # Calculate SE% using SEAggregator for variance propagation
             if se_col and se_col in subset.columns:
-                se_values = subset[se_col].dropna()
-                # Combine SEs: sqrt(sum of squared SEs)
-                combined_se = float((se_values**2).sum() ** 0.5)
-                se_pct = _calculate_se_percent(combined_se, estimate)
+                combined_se = SEAggregator.combine_se(subset[se_col])
+                se_pct = SEAggregator.calculate_se_percent(combined_se, estimate)
             else:
                 se_pct = 0.0
 
@@ -1425,11 +1393,11 @@ class FIAService:
             est_col = _get_estimate_column(df, metric)
             se_col = _get_se_column(df, metric)
 
-            # Helper to calculate SE% for this function
+            # Helper to calculate SE% using SEAggregator for variance propagation
             def calc_se_pct(estimate: float) -> float:
                 if se_col and se_col in df.columns:
-                    combined_se = float((df[se_col].dropna() ** 2).sum() ** 0.5)
-                    return _calculate_se_percent(combined_se, estimate)
+                    combined_se = SEAggregator.combine_se(df[se_col])
+                    return SEAggregator.calculate_se_percent(combined_se, estimate)
                 return 0.0
 
             # Format response based on metric

@@ -1,122 +1,13 @@
 """Pydantic schemas for API requests and responses."""
 
-import re
 from pydantic import BaseModel, Field, field_validator
 from typing import Literal
 
+# Import validation functions from centralized security module
+from ..security import validate_domain_expression, validate_state_codes, VALID_STATE_CODES
 
-# ============================================================================
-# Security Validation
-# ============================================================================
-
-# Valid US state codes (50 states + DC + territories)
-VALID_STATE_CODES = {
-    # 50 States
-    "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
-    "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD",
-    "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ",
-    "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC",
-    "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY",
-    # District of Columbia
-    "DC",
-    # US Territories (FIA has some data)
-    "PR", "VI", "GU", "AS", "MP",
-}
-
-
-def validate_state_codes(states: list[str]) -> list[str]:
-    """
-    Validate and normalize state codes.
-
-    Args:
-        states: List of state codes to validate
-
-    Returns:
-        List of validated, uppercase state codes
-
-    Raises:
-        ValueError: If any state code is invalid
-    """
-    if not states:
-        raise ValueError("At least one state code is required")
-
-    normalized = []
-    invalid = []
-
-    for state in states:
-        code = state.strip().upper()
-        if code in VALID_STATE_CODES:
-            normalized.append(code)
-        else:
-            invalid.append(state)
-
-    if invalid:
-        raise ValueError(
-            f"Invalid state code(s): {', '.join(invalid)}. "
-            f"Must be valid 2-letter US state abbreviations (e.g., NC, GA, CA)."
-        )
-
-    return normalized
-
-
-def validate_domain_expression(domain: str | None, domain_type: str = "tree_domain") -> str | None:
-    """
-    Validate domain expression to prevent SQL injection.
-
-    This validates filter expressions like 'DIA >= 10.0' to ensure they don't
-    contain SQL injection attempts.
-
-    Args:
-        domain: The domain expression to validate
-        domain_type: Description for error messages
-
-    Returns:
-        The validated domain string, or None
-
-    Raises:
-        ValueError: If the domain contains dangerous SQL patterns
-    """
-    if domain is None:
-        return None
-
-    if not isinstance(domain, str):
-        raise TypeError(f"{domain_type} must be a string, got {type(domain).__name__}")
-
-    # Basic sanity checks
-    if domain.strip() == "":
-        raise ValueError(f"{domain_type} cannot be an empty string")
-
-    # Check for dangerous SQL patterns with word boundaries
-    # Using word boundaries to avoid false positives (e.g., "UPDATED_DATE" is OK)
-    dangerous_patterns = [
-        r"\bDROP\b",
-        r"\bDELETE\b",
-        r"\bINSERT\b",
-        r"\bUPDATE\b",
-        r"\bALTER\b",
-        r"\bCREATE\b",
-        r"\bEXEC\b",
-        r"\bEXECUTE\b",
-        r"\bTRUNCATE\b",
-        r"\bUNION\b",
-        r"\bSELECT\b",
-        r"--",  # SQL comment
-        r"/\*",  # SQL block comment start
-        r"\*/",  # SQL block comment end
-        r";",    # Statement terminator
-    ]
-
-    domain_upper = domain.upper()
-    for pattern in dangerous_patterns:
-        if re.search(pattern, domain_upper if pattern.startswith(r"\b") else domain):
-            # Extract the keyword for the error message
-            keyword = pattern.replace(r"\b", "").replace("\\", "")
-            raise ValueError(
-                f"{domain_type} contains potentially dangerous SQL pattern: '{keyword}'. "
-                f"Only simple filter expressions like 'DIA >= 10.0' are allowed."
-            )
-
-    return domain
+# Import base classes for schema inheritance
+from .base import DomainValidatedModel, StateValidatedModel
 
 
 # ============================================================================
@@ -142,12 +33,9 @@ class ChatRequest(BaseModel):
 # ============================================================================
 
 
-class AreaQuery(BaseModel):
+class AreaQuery(StateValidatedModel):
     """Request for forest area query."""
 
-    states: list[str] = Field(
-        ..., description="List of two-letter state codes", examples=[["NC", "GA", "SC"]]
-    )
     land_type: Literal["forest", "timber", "reserved", "productive"] = Field(
         default="forest", description="Land classification filter"
     )
@@ -155,73 +43,52 @@ class AreaQuery(BaseModel):
         default=None,
         description="Column to group by (e.g., OWNGRPCD, FORTYPCD)",
     )
-
-    @field_validator("states")
-    @classmethod
-    def validate_states(cls, v: list[str]) -> list[str]:
-        return validate_state_codes(v)
-
-
-class VolumeQuery(BaseModel):
-    """Request for timber volume query."""
-
-    states: list[str] = Field(..., description="List of two-letter state codes")
-    by_species: bool = Field(default=False, description="Group results by species")
-    tree_domain: str | None = Field(
+    cond_domain: str | None = Field(
         default=None,
-        description="Filter expression (e.g., 'DIA >= 10.0')",
+        description="Condition-level filter expression (e.g., 'FORTYPCD == 141')",
     )
 
-    @field_validator("states")
+    @field_validator("cond_domain", mode="before")
     @classmethod
-    def validate_states(cls, v: list[str]) -> list[str]:
-        return validate_state_codes(v)
-
-    @field_validator("tree_domain")
-    @classmethod
-    def validate_tree_domain(cls, v: str | None) -> str | None:
-        """Validate tree_domain to prevent SQL injection."""
-        return validate_domain_expression(v, "tree_domain")
+    def validate_cond_domain(cls, v: str | None) -> str | None:
+        """Validate cond_domain to prevent SQL injection."""
+        return validate_domain_expression(v, "cond_domain")
 
 
-class BiomassQuery(BaseModel):
+class VolumeQuery(DomainValidatedModel):
+    """Request for timber volume query."""
+
+    by_species: bool = Field(default=False, description="Group results by species")
+
+
+class BiomassQuery(StateValidatedModel):
     """Request for biomass/carbon query."""
 
-    states: list[str] = Field(..., description="List of two-letter state codes")
     land_type: Literal["forest", "timber"] = Field(
         default="forest", description="Land classification"
     )
     by_species: bool = Field(default=False, description="Group by species")
 
-    @field_validator("states")
-    @classmethod
-    def validate_states(cls, v: list[str]) -> list[str]:
-        return validate_state_codes(v)
 
-
-class TPAQuery(BaseModel):
+class TPAQuery(StateValidatedModel):
     """Request for trees per acre query."""
 
-    states: list[str] = Field(..., description="List of two-letter state codes")
     tree_domain: str = Field(
         default="STATUSCD == 1", description="Tree filter (1=live, 2=dead)"
     )
     by_species: bool = Field(default=False, description="Group by species")
 
-    @field_validator("states")
+    @field_validator("tree_domain", mode="before")
     @classmethod
-    def validate_states(cls, v: list[str]) -> list[str]:
-        return validate_state_codes(v)
-
-    @field_validator("tree_domain")
-    @classmethod
-    def validate_tree_domain(cls, v: str) -> str:
+    def validate_tree_domain(cls, v: str | None) -> str:
         """Validate tree_domain to prevent SQL injection."""
+        if v is None:
+            return "STATUSCD == 1"
         result = validate_domain_expression(v, "tree_domain")
         return result if result is not None else "STATUSCD == 1"
 
 
-class CompareQuery(BaseModel):
+class CompareQuery(StateValidatedModel):
     """Request for state comparison."""
 
     states: list[str] = Field(
@@ -233,11 +100,6 @@ class CompareQuery(BaseModel):
     land_type: Literal["forest", "timber"] = Field(
         default="forest", description="Land type filter"
     )
-
-    @field_validator("states")
-    @classmethod
-    def validate_states(cls, v: list[str]) -> list[str]:
-        return validate_state_codes(v)
 
 
 # ============================================================================
@@ -280,6 +142,15 @@ class BiomassResponse(QueryResponse):
     by_species: list[dict] | None = None
 
 
+class TPAResponse(QueryResponse):
+    """Response for trees per acre query."""
+
+    tree_domain: str
+    total_tpa: float
+    se_percent: float
+    by_species: list[dict] | None = None
+
+
 class StateComparison(BaseModel):
     """Single state in comparison."""
 
@@ -302,21 +173,15 @@ class CompareResponse(BaseModel):
 # ============================================================================
 
 
-class DownloadRequest(BaseModel):
+class DownloadRequest(StateValidatedModel):
     """Request to prepare data download."""
 
-    states: list[str] = Field(..., description="States to include")
     tables: list[str] = Field(
         default=["PLOT", "COND", "TREE"], description="FIA tables to include"
     )
     format: Literal["duckdb", "parquet", "csv"] = Field(
         default="parquet", description="Output format"
     )
-
-    @field_validator("states")
-    @classmethod
-    def validate_states(cls, v: list[str]) -> list[str]:
-        return validate_state_codes(v)
 
 
 class DownloadResponse(BaseModel):

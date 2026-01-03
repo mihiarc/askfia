@@ -1,7 +1,6 @@
 """LangChain agent for FIA queries."""
 
 import logging
-import re
 import time
 from collections.abc import AsyncGenerator
 
@@ -11,61 +10,11 @@ from langchain_core.tools import tool
 from pydantic import BaseModel, Field, field_validator
 
 from ..config import settings
+from ..security import validate_domain_expression
 from .fia_service import fia_service
 from .forest_types import get_forest_type_name
 from .gridfia_service import GRIDFIA_AVAILABLE
 from .usage_tracker import usage_tracker
-
-# ============================================================================
-# Security Validation
-# ============================================================================
-
-
-def validate_domain_expression(domain: str | None, domain_type: str = "tree_domain") -> str | None:
-    """
-    Validate domain expression to prevent SQL injection.
-
-    This validates filter expressions like 'DIA >= 10.0' to ensure they don't
-    contain SQL injection attempts.
-    """
-    if domain is None:
-        return None
-
-    if not isinstance(domain, str):
-        raise TypeError(f"{domain_type} must be a string")
-
-    if domain.strip() == "":
-        raise ValueError(f"{domain_type} cannot be empty")
-
-    # Check for dangerous SQL patterns
-    dangerous_patterns = [
-        r"\bDROP\b",
-        r"\bDELETE\b",
-        r"\bINSERT\b",
-        r"\bUPDATE\b",
-        r"\bALTER\b",
-        r"\bCREATE\b",
-        r"\bEXEC\b",
-        r"\bEXECUTE\b",
-        r"\bTRUNCATE\b",
-        r"\bUNION\b",
-        r"\bSELECT\b",
-        r"--",
-        r"/\*",
-        r"\*/",
-        r";",
-    ]
-
-    domain_upper = domain.upper()
-    for pattern in dangerous_patterns:
-        if re.search(pattern, domain_upper if pattern.startswith(r"\b") else domain):
-            keyword = pattern.replace(r"\b", "").replace("\\", "")
-            raise ValueError(
-                f"{domain_type} contains dangerous SQL pattern: '{keyword}'. "
-                f"Only simple filters like 'DIA >= 10.0' are allowed."
-            )
-
-    return domain
 
 logger = logging.getLogger(__name__)
 
