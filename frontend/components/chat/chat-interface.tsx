@@ -1,31 +1,21 @@
 "use client";
 
-import { useRef, useEffect, useState } from "react";
+import { useRef, useEffect } from "react";
 import { Message } from "@ai-sdk/react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Card } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
 import {
   Send,
   StopCircle,
-  RefreshCw,
   TreeDeciduous,
-  User,
   Sparkles,
   ExternalLink,
   Home,
   MessageSquarePlus,
-  ChevronDown,
-  ChevronUp,
-  AlertCircle,
-  Lightbulb,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { MessageBubble } from "./message-bubble";
+import { EnhancedErrorCard, getErrorHelp } from "./enhanced-error-card";
 
 interface ChatInterfaceProps {
   messages: Message[];
@@ -104,37 +94,6 @@ export function ChatInterface({
     ? suggestions
     : suggestions.slice(0, 2);
   const showSuggestions = !isLoading && visibleSuggestions.length > 0;
-
-  // Get contextual error help
-  const getErrorHelp = (error: Error) => {
-    const message = error.message.toLowerCase();
-    if (message.includes("network") || message.includes("fetch")) {
-      return {
-        title: "Connection Error",
-        description: "Unable to reach the server. Please check your internet connection.",
-        suggestions: ["Check your network connection", "Try refreshing the page", "Wait a moment and retry"],
-      };
-    }
-    if (message.includes("timeout")) {
-      return {
-        title: "Request Timeout",
-        description: "The query took too long to process.",
-        suggestions: ["Try a simpler query", "Ask about fewer states at once", "Retry the request"],
-      };
-    }
-    if (message.includes("401") || message.includes("unauthorized")) {
-      return {
-        title: "Authentication Error",
-        description: "Your session may have expired.",
-        suggestions: ["Refresh the page to re-authenticate", "Clear browser cookies and try again"],
-      };
-    }
-    return {
-      title: "Something Went Wrong",
-      description: error.message || "An unexpected error occurred.",
-      suggestions: ["Try rephrasing your question", "Start a new conversation", "Retry the request"],
-    };
-  };
 
   return (
     <div className="flex flex-col h-screen">
@@ -304,186 +263,6 @@ export function ChatInterface({
           </a>
         </p>
       </div>
-    </div>
-  );
-}
-
-// Enhanced error card with context
-function EnhancedErrorCard({
-  error,
-  errorHelp,
-  onReload
-}: {
-  error: Error;
-  errorHelp: { title: string; description: string; suggestions: string[] };
-  onReload: () => void;
-}) {
-  return (
-    <Card className="p-4 border-destructive/50 bg-destructive/5">
-      <div className="flex items-start gap-3">
-        <div className="p-2 rounded-full bg-destructive/10">
-          <AlertCircle className="h-5 w-5 text-destructive" />
-        </div>
-        <div className="flex-1">
-          <h4 className="font-medium text-destructive">{errorHelp.title}</h4>
-          <p className="text-sm text-muted-foreground mt-1">{errorHelp.description}</p>
-
-          <div className="mt-3 space-y-1">
-            <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
-              <Lightbulb className="h-3 w-3" />
-              Suggestions:
-            </p>
-            <ul className="text-xs text-muted-foreground space-y-0.5">
-              {errorHelp.suggestions.map((s, i) => (
-                <li key={i}>• {s}</li>
-              ))}
-            </ul>
-          </div>
-
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onReload}
-            className="mt-3"
-          >
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Retry
-          </Button>
-        </div>
-      </div>
-    </Card>
-  );
-}
-
-function MessageBubble({ message }: { message: Message }) {
-  const isUser = message.role === "user";
-
-  return (
-    <div className={cn("flex gap-3", isUser && "flex-row-reverse")}>
-      <Avatar className="h-8 w-8 shrink-0">
-        <AvatarFallback
-          className={cn(
-            isUser
-              ? "bg-primary text-primary-foreground"
-              : "bg-forest-600 text-white"
-          )}
-        >
-          {isUser ? (
-            <User className="h-4 w-4" />
-          ) : (
-            <TreeDeciduous className="h-4 w-4" />
-          )}
-        </AvatarFallback>
-      </Avatar>
-
-      <Card
-        className={cn(
-          "max-w-[85%] p-4",
-          isUser ? "bg-primary text-primary-foreground" : "bg-muted"
-        )}
-      >
-        {/* Tool invocations */}
-        {message.toolInvocations && message.toolInvocations.length > 0 && (
-          <div className="space-y-2 mb-3">
-            {message.toolInvocations.map((tool, i) => (
-              <ToolCallDisplay key={i} tool={tool} />
-            ))}
-          </div>
-        )}
-
-        {/* Message content */}
-        {message.content && (
-          <div
-            className={cn(
-              "prose-chat",
-              isUser ? "prose-invert" : ""
-            )}
-          >
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
-          </div>
-        )}
-      </Card>
-    </div>
-  );
-}
-
-interface ToolCall {
-  toolCallId: string;
-  toolName: string;
-  args: Record<string, unknown>;
-  state: "partial-call" | "call" | "result";
-  result?: unknown;
-}
-
-function ToolCallDisplay({ tool }: { tool: ToolCall }) {
-  const [isExpanded, setIsExpanded] = useState(false);
-
-  const toolLabels: Record<string, string> = {
-    query_forest_area: "Forest Area",
-    query_timber_volume: "Timber Volume",
-    query_biomass_carbon: "Biomass & Carbon",
-    query_trees_per_acre: "Trees Per Acre",
-    query_mortality: "Mortality",
-    query_growth: "Growth",
-    compare_states: "State Comparison",
-  };
-
-  const label = toolLabels[tool.toolName] || tool.toolName;
-  const states = (tool.args.states as string[]) || [];
-  const hasResult = tool.state === "result" && tool.result !== undefined && tool.result !== null;
-
-  if (tool.state === "call" || tool.state === "partial-call") {
-    return (
-      <div className="flex items-center gap-2 text-muted-foreground text-sm">
-        <Sparkles className="h-3 w-3 animate-pulse text-forest-500" />
-        <span>Querying {label}...</span>
-        {states.length > 0 && (
-          <Badge variant="outline" className="text-xs">
-            {states.join(", ")}
-          </Badge>
-        )}
-      </div>
-    );
-  }
-
-  return (
-    <div className="text-sm">
-      <div className="flex items-center gap-2">
-        <TreeDeciduous className="h-3 w-3 text-forest-600" />
-        <span className="font-medium">{label}</span>
-        {states.length > 0 && (
-          <Badge variant="secondary" className="text-xs">
-            {states.join(", ")}
-          </Badge>
-        )}
-        {hasResult ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-6 px-2 text-xs ml-auto"
-            onClick={() => setIsExpanded(!isExpanded)}
-          >
-            {isExpanded ? (
-              <>
-                Hide data <ChevronUp className="h-3 w-3 ml-1" />
-              </>
-            ) : (
-              <>
-                View data <ChevronDown className="h-3 w-3 ml-1" />
-              </>
-            )}
-          </Button>
-        ) : null}
-      </div>
-
-      {/* Expandable raw data section */}
-      {isExpanded && hasResult ? (
-        <div className="mt-2 p-3 bg-background/50 rounded-lg border text-xs font-mono overflow-x-auto">
-          <pre className="whitespace-pre-wrap">
-            {JSON.stringify(tool.result, null, 2)}
-          </pre>
-        </div>
-      ) : null}
     </div>
   );
 }

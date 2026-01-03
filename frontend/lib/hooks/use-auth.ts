@@ -2,8 +2,7 @@
 
 import { useCallback } from "react";
 import { useAuthStore } from "@/stores/auth-store";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+import { API_CONFIG } from "@/lib/config/api";
 
 interface AuthResponse {
   authenticated: boolean;
@@ -32,7 +31,7 @@ export function useAuth() {
       setError(null);
 
       try {
-        const response = await fetch(`${API_URL}/api/v1/auth/login`, {
+        const response = await fetch(`${API_CONFIG.baseUrl}${API_CONFIG.endpoints.auth.login}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
@@ -65,7 +64,7 @@ export function useAuth() {
       setError(null);
 
       try {
-        const response = await fetch(`${API_URL}/api/v1/auth/signup`, {
+        const response = await fetch(`${API_CONFIG.baseUrl}${API_CONFIG.endpoints.auth.signup}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
@@ -94,7 +93,7 @@ export function useAuth() {
 
   const logout = useCallback(async (): Promise<void> => {
     try {
-      await fetch(`${API_URL}/api/v1/auth/logout`, {
+      await fetch(`${API_CONFIG.baseUrl}${API_CONFIG.endpoints.auth.logout}`, {
         method: "POST",
         credentials: "include",
       });
@@ -107,7 +106,7 @@ export function useAuth() {
     setLoading(true);
 
     try {
-      const response = await fetch(`${API_URL}/api/v1/auth/verify`, {
+      const response = await fetch(`${API_CONFIG.baseUrl}${API_CONFIG.endpoints.auth.verify}`, {
         method: "GET",
         credentials: "include",
       });
@@ -128,7 +127,7 @@ export function useAuth() {
 
   const refresh = useCallback(async (): Promise<boolean> => {
     try {
-      const response = await fetch(`${API_URL}/api/v1/auth/refresh`, {
+      const response = await fetch(`${API_CONFIG.baseUrl}${API_CONFIG.endpoints.auth.refresh}`, {
         method: "POST",
         credentials: "include",
       });

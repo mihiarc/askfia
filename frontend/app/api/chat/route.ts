@@ -1,24 +1,26 @@
 import { NextRequest } from "next/server";
+import { API_CONFIG } from "@/lib/config/api";
 
 export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
   const { messages } = await req.json();
 
-  const backendUrl = process.env.BACKEND_URL || "http://localhost:8000";
-
   try {
     // Forward cookies from the client to the backend for authentication
     const cookies = req.headers.get("cookie") || "";
 
-    const response = await fetch(`${backendUrl}/api/v1/chat/stream`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Cookie: cookies,
-      },
-      body: JSON.stringify({ messages }),
-    });
+    const response = await fetch(
+      `${API_CONFIG.backendUrl}${API_CONFIG.endpoints.chat.stream}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: cookies,
+        },
+        body: JSON.stringify({ messages }),
+      }
+    );
 
     if (!response.ok) {
       const error = await response.text();

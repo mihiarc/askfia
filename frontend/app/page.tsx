@@ -6,8 +6,7 @@ import { useChat, Message } from "@ai-sdk/react";
 import { ChatInterface } from "@/components/chat/chat-interface";
 import { HeroSection } from "@/components/hero/hero-section";
 import { useAuth } from "@/lib/hooks/use-auth";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+import { API_CONFIG } from "@/lib/config/api";
 
 const STORAGE_KEY = "askfia_conversation";
 const SHOW_CHAT_KEY = "askfia_show_chat";
@@ -86,7 +85,7 @@ function HomeContent() {
     error,
     reload,
   } = useChat({
-    api: `${API_URL}/api/v1/chat/stream`,
+    api: `${API_CONFIG.baseUrl}${API_CONFIG.endpoints.chat.stream}`,
     credentials: "include",
     initialMessages: getInitialMessages(),
   });
